@@ -18,6 +18,55 @@ const PNAME = { 1: 'peón', 2: 'caballo', 3: 'alfil', 4: 'torre', 5: 'dama', 6: 
 const RESULT_TXT = { '1-0': 'Ganan las blancas', '0-1': 'Ganan las negras', '1/2-1/2': 'Tablas' };
 const COLOR_TXT = ['blancas', 'negras'];
 
+/* ================= Sonidos (sintetizados: sin archivos de audio) ================= */
+const Sound = (() => {
+  let ctx = null;
+  const ac = () => {
+    if (!ctx) { const C = window.AudioContext || window.webkitAudioContext; if (!C) return null; try { ctx = new C(); } catch (e) { return null; } }
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    return ctx;
+  };
+  // golpe de madera: ruido corto filtrado
+  function knock(c, t, freq, vol, dur) {
+    const len = Math.floor(c.sampleRate * dur), buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 4);
+    const src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+    f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 1.2; g.gain.value = vol;
+    src.buffer = buf; src.connect(f); f.connect(g); g.connect(c.destination); src.start(t);
+  }
+  function tone(c, t, freq, dur, vol, type) {
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type || 'sine'; o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.02);
+  }
+  function play(kind) {
+    if (S.sound === false) return;
+    const c = ac(); if (!c) return;
+    const t = c.currentTime + 0.01;
+    try {
+      if (kind === 'move') knock(c, t, 1500, 0.9, 0.06);
+      else if (kind === 'capture') { knock(c, t, 900, 1.2, 0.09); knock(c, t + 0.05, 1700, 0.6, 0.05); }
+      else if (kind === 'castle') { knock(c, t, 1500, 0.8, 0.05); knock(c, t + 0.09, 1300, 0.8, 0.05); }
+      else if (kind === 'check') { knock(c, t, 1400, 0.8, 0.05); tone(c, t + 0.03, 880, 0.18, 0.12, 'triangle'); }
+      else if (kind === 'end') { [523, 659, 784].forEach((f, i) => tone(c, t + i * 0.11, f, 0.45, 0.13, 'triangle')); }
+      else if (kind === 'ok') { [659, 988].forEach((f, i) => tone(c, t + i * 0.1, f, 0.3, 0.12, 'sine')); }
+      else if (kind === 'bad') tone(c, t, 180, 0.25, 0.14, 'square');
+    } catch (e) {}
+  }
+  // tipo de sonido para una jugada
+  function forMove(before, uci) {
+    const from = CH.sqParse(uci.slice(0, 2)), to = CH.sqParse(uci.slice(2, 4)), p = before.b[from];
+    const after = before.clone(); const m = after.fromUci(uci); if (!m) return 'move';
+    after.make(m);
+    if (after.inCheck()) return 'check';
+    if ((p & 7) === CH.KING && Math.abs((to & 7) - (from & 7)) === 2) return 'castle';
+    if (before.b[to] || ((p & 7) === CH.PAWN && (from & 7) !== (to & 7))) return 'capture';
+    return 'move';
+  }
+  return { play, forMove };
+})();
+
 /* ================= Motor en segundo plano ================= */
 const Engine = (() => {
   let w = null, seq = 0; const pend = {};
@@ -206,8 +255,9 @@ function askPromotion(color, done, cancel) {
   openModal(`<h3>Coronar</h3><div class="sub">Elige la pieza.</div>
     <div class="promo">${[5, 4, 3, 2].map(t => `<button data-pr="${t}" aria-label="${PNAME[t]}">${Piezas.piece(t, color)}<span>${PNAME[t]}</span></button>`).join('')}</div>
     <div class="acts"><button class="btn-ghost" id="prNo">Cancelar</button></div>`);
-  document.querySelectorAll('[data-pr]').forEach(b => b.onclick = () => { closeModal(); done(+b.dataset.pr); });
-  $('#prNo').onclick = () => { closeModal(); cancel(); };
+  modalOnClose = cancel;
+  document.querySelectorAll('[data-pr]').forEach(b => b.onclick = () => { modalOnClose = null; closeModal(); done(+b.dataset.pr); });
+  $('#prNo').onclick = () => closeModal();
 }
 // Piezas capturadas y diferencia de material
 function captured(pos) {
@@ -365,6 +415,9 @@ function movesStrip(san, cur, startPos) {
   });
   return h || '<span class="mut">Aún no hay jugadas.</span>';
 }
+// Nombre de la apertura (solo si la partida empezó desde la posición inicial)
+function openingName(g, ply) { return g.startFen || !window.Aperturas ? '' : Aperturas.aperturaDe(g.moves.slice(0, ply == null ? g.moves.length : ply)); }
+function openingLine(g, ply) { const n = openingName(g, ply); return n ? `<div class="opening">📖 ${esc(n)}</div>` : ''; }
 function statusText(g, R) {
   if (g.result) {
     const why = CH.REASONS[g.reason] || '';
@@ -408,6 +461,7 @@ function renderGame() {
       <div class="sidebars">${playerBar(g, top, R.pos)}${playerBar(g, bottom, R.pos)}</div>
       <div class="gstatus ${g.result ? 'end' : ''}"><span>${esc(statusText(g, R))}</span>${!g.result && g.mode === 'ai' && g.learn ? '<button id="gHint">💡 Pista</button>' : ''}</div>
       ${viewing ? `<button class="viewing" id="gLive">Viendo la jugada ${VIEW_PLY} · <u>Volver a la partida</u></button>` : ''}
+      ${openingLine(g, viewing ? VIEW_PLY : g.moves.length)}
       <div class="moves" id="moves">${movesStrip(R.san, viewing ? VIEW_PLY : g.moves.length, g.startFen ? new CH.Position(g.startFen) : null)}</div>
       <div class="gacts">${acts}</div>
     </div></div>`;
@@ -447,6 +501,7 @@ function applyMove(g, uci, before) {
     g.tick = Date.now(); g.paused = false;
   }
   ANIM = animFor(before, uci);
+  Sound.play(Sound.forMove(before, uci));
   g.moves.push(uci);
   VIEW_PLY = null; BS.sel = null;
   vibrate(12);
@@ -460,6 +515,7 @@ function endGame(result, reason) {
   g.result = result; g.reason = reason; g.finished = Date.now(); g.tick = null;
   THINK = null; LEARN_WAIT = null; HINT = null; Engine.reset();
   archiveUpsert(g);
+  setTimeout(() => Sound.play('end'), 250);
   vibrate([30, 60, 30]);
   save(); render(); autoBackup(true);
 }
@@ -505,8 +561,10 @@ async function learnCheck(g, n, tok) {
   const best = p.fromUci(before.move) ? CH.sanEs(p.san(p.fromUci(before.move))) : before.move;
   openModal(`<h3>⚠️ ¿Seguro?</h3><div class="sub">Esa jugada te hace perder ventaja (unos ${fmtPawns(loss)} peones${as < -300 ? ', y la posición queda difícil' : ''}).<br>Una jugada mejor era <b>${esc(best)}</b>.</div>
     <div class="acts"><button class="btn-ghost" id="lnUndo">↶ Deshacer</button><button class="btn-gold" id="lnGo">Seguir así</button></div>`);
-  $('#lnGo').onclick = () => { closeModal(); LEARN_WAIT = null; render(); };
-  $('#lnUndo').onclick = () => { closeModal(); LEARN_WAIT = null; if (S.game === g && g.moves.length === n) { g.moves.pop(); g.undos = (g.undos || 0) + 1; } save(); render(); };
+  // cerrar la ventana de cualquier forma (fuera, atrás) equivale a «Seguir así»
+  modalOnClose = () => { LEARN_WAIT = null; render(); };
+  $('#lnGo').onclick = () => closeModal();
+  $('#lnUndo').onclick = () => { modalOnClose = null; closeModal(); LEARN_WAIT = null; if (S.game === g && g.moves.length === n) { g.moves.pop(); g.undos = (g.undos || 0) + 1; } save(); render(); };
 }
 const fmtPawns = cp => (Math.round(Math.abs(cp) / 10) / 10).toLocaleString('es-ES', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 function undoMove() {
@@ -756,6 +814,7 @@ function renderReview() {
       <div class="nav"><button data-nav="first" aria-label="Inicio">⏮</button><button data-nav="prev" aria-label="Anterior">◀</button><button data-nav="next" aria-label="Siguiente">▶</button><button data-nav="last" aria-label="Final">⏭</button><button data-nav="flip" aria-label="Girar">⇅</button></div>
     </div>
     <div class="gs">
+      ${openingLine(g, ply)}
       <div class="note">${note}</div>
       ${RV.analysing ? `<div class="anprog"><i style="width:${Math.round((RV.progress || 0) * 100)}%"></i><span>Analizando… ${Math.round((RV.progress || 0) * 100)}%</span></div>` : ''}
       ${sum ? `<div class="sum">${[0, 1].map(c => `<div><b>${esc(sideName(g, c))}</b><span>Precisión ${sum[c].acc}%</span><small><i class="c-blun">${sum[c].grave} ??</i> <i class="c-err">${sum[c].error} ?</i> <i class="c-inac">${sum[c].imprecision} ?!</i></small></div>`).join('')}</div>` : ''}
@@ -769,7 +828,7 @@ function renderReview() {
       ${g.analysis ? '<div class="mut" style="margin-top:6px">★ mejor jugada · ?! imprecisión · ? error · ?? error grave. Análisis rápido del motor de la app: orientativo.</div>' : ''}
     </div></div>`;
   const bd = $('#board'); animate(bd, orient);
-  const go = p => { const np = Math.max(0, Math.min(all.moves.length, p)); if (np === RV.ply + 1 && !RV.showBest) ANIM = animFor(CH.replay(g.moves.slice(0, RV.ply), g.startFen).pos, g.moves[RV.ply]); RV.ply = np; RV.showBest = false; renderReview(); };
+  const go = p => { const np = Math.max(0, Math.min(all.moves.length, p)); if (np === RV.ply + 1 && !RV.showBest) { const bp = CH.replay(g.moves.slice(0, RV.ply), g.startFen).pos; ANIM = animFor(bp, g.moves[RV.ply]); Sound.play(Sound.forMove(bp, g.moves[RV.ply])); } RV.ply = np; RV.showBest = false; renderReview(); };
   document.querySelectorAll('[data-nav]').forEach(b => b.onclick = () => {
     const k = b.dataset.nav;
     if (k === 'first') go(0); else if (k === 'prev') go(RV.ply - 1); else if (k === 'next') go(RV.ply + 1); else if (k === 'last') go(all.moves.length);
@@ -869,6 +928,7 @@ async function puzzleMove(uci) {
   const k = z.moves.length, onLine = z.moves.every((m, i) => m === P.sol[i]);
   const left = P.n - Math.floor(k / 2);      // jugadas del atacante que quedan, incluida esta
   ANIM = animFor(before, uci); HINT = null; PZ_MSG = '';
+  Sound.play(Sound.forMove(before, uci));
   z.moves.push(uci); save(); render();
   const after = CH.replay(z.moves, P.fen).pos, st = CH.status(after);
   let ok = st.over && st.reason === 'mate';
@@ -878,11 +938,11 @@ async function puzzleMove(uci) {
   }
   if (S.pz !== z) return;
   if (!ok) {
-    z.fails++; PZ_MSG = '❌ Así no hay mate. Prueba otra vez.'; vibrate(60); save(); render();
+    z.fails++; PZ_MSG = '❌ Así no hay mate. Prueba otra vez.'; vibrate(60); Sound.play('bad'); save(); render();
     setTimeout(() => { if (S.pz === z && z.moves.length === k + 1) { z.moves.pop(); save(); render(); } }, 900);
     return;
   }
-  if (st.over) { z.done = true; if (!z.seen) { S.solved = S.solved || {}; S.solved[z.id] = Math.max(S.solved[z.id] || 0, z.fails ? 1 : 2); } vibrate([20, 40, 20]); save(); render(); return; }
+  if (st.over) { z.done = true; if (!z.seen) { S.solved = S.solved || {}; S.solved[z.id] = Math.max(S.solved[z.id] || 0, z.fails ? 1 : 2); } vibrate([20, 40, 20]); setTimeout(() => Sound.play('ok'), 200); save(); render(); return; }
   // respuesta de la defensa
   PZ_BUSY = true; render();
   let reply = null;
@@ -894,6 +954,7 @@ async function puzzleMove(uci) {
   if (S.pz !== z) return;
   if (!reply) { render(); return; }
   const bp = CH.replay(z.moves, P.fen).pos; ANIM = animFor(bp, reply);
+  Sound.play(Sound.forMove(bp, reply));
   z.moves.push(reply); save(); render();
 }
 async function puzzleHint(P) {
@@ -912,7 +973,7 @@ function showSolution(P) {
   const step = () => {
     if (S.pz !== z) { PZ_BUSY = false; return; }
     if (i >= P.sol.length) { PZ_BUSY = false; z.done = true; save(); render(); return; }
-    const bp = CH.replay(z.moves, P.fen).pos; ANIM = animFor(bp, P.sol[i]); z.moves.push(P.sol[i++]); render();
+    const bp = CH.replay(z.moves, P.fen).pos; ANIM = animFor(bp, P.sol[i]); Sound.play(Sound.forMove(bp, P.sol[i])); z.moves.push(P.sol[i++]); render();
     setTimeout(step, 750);
   };
   setTimeout(step, 400);

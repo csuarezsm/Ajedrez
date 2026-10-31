@@ -194,6 +194,7 @@ main:has(.gm){padding-top:8px}
 .gstatus button{padding:6px 12px;background:var(--blue);color:var(--on-blue);font-weight:700;flex:none}
 .gstatus.end{background:var(--gold);color:var(--on-gold)}
 .gstatus.bad{background:var(--red);color:#fff}
+.opening{color:var(--mut);font-size:calc(13px * var(--fs, 1));text-align:center;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .viewing{width:100%;margin-top:6px;padding:8px;background:var(--blue);color:var(--on-blue);font-weight:700}
 .moves{display:flex;align-items:center;gap:1px;overflow-x:auto;white-space:nowrap;padding:8px 2px;scrollbar-width:none;min-height:44px}
 .moves::-webkit-scrollbar{display:none}
@@ -285,6 +286,7 @@ pre.pgn{background:var(--bg);border-radius:10px;padding:10px;max-height:28vh;ove
 <script src="motor.js"></script>
 <script src="piezas.js"></script>
 <script src="problemas.js"></script>
+<script src="aperturas.js"></script>
 <script src="juego.js"></script>
 <script>
 'use strict';
@@ -325,7 +327,8 @@ function openThemes() {
   const cur = S.theme || 'noche';
   openModal(`<h3>♟ Tablero</h3>
     <div class="bthemes">${Object.entries(BOARDS).map(([k, b]) => `<button data-board="${k}" class="${(S.board || 'madera') === k ? 'on' : ''}"><div class="mini"><i style="background:${b.l}"></i><i style="background:${b.d}"></i><i style="background:${b.d}"></i><i style="background:${b.l}"></i></div><span>${esc(b.name)}</span></button>`).join('')}</div>
-    <label class="f" style="margin-bottom:10px"><span>Coordenadas en el tablero<em>Letras y números en el borde</em></span><input type="checkbox" class="tg" id="thCoords" ${S.coords !== false ? 'checked' : ''}></label>
+    <label class="f"><span>Coordenadas en el tablero<em>Letras y números en el borde</em></span><input type="checkbox" class="tg" id="thCoords" ${S.coords !== false ? 'checked' : ''}></label>
+    <label class="f" style="margin-bottom:10px"><span>Sonidos<em>Al mover, capturar, dar jaque y al terminar</em></span><input type="checkbox" class="tg" id="thSound" ${S.sound !== false ? 'checked' : ''}></label>
     <h3>🔠 Tamaño de letra</h3>
     <div class="kinds" style="margin:6px 0 16px">${FONT_SIZES.map(([v, l]) => `<button data-fs="${v}" class="${String(S.fontScale || '1') === v ? 'on' : ''}" style="font-size:${13 * parseFloat(v)}px">${l}</button>`).join('')}</div>
     <h3>🎨 Colores de la app</h3><div class="sub">Toca un tema y se aplica al momento.</div>
@@ -339,10 +342,11 @@ function openThemes() {
   document.querySelectorAll('[data-board]').forEach(b => b.onclick = () => { S.board = b.dataset.board; save(); render(); openThemes(); });
   document.querySelectorAll('[data-fs]').forEach(b => b.onclick = () => { S.fontScale = b.dataset.fs; applyFont(); save(); openThemes(); });
   $('#thCoords').onchange = e => { S.coords = e.target.checked; save(); render(); };
+  $('#thSound').onchange = e => { S.sound = e.target.checked; save(); if (S.sound) Sound.play('move'); };
   $('#thOk').onclick = closeModal;
 }
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 const REPO = 'csuarezsm/Ajedrez';
 const MAX_ARCHIVE = 500;
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -371,8 +375,9 @@ S.pz = S.pz || null;
 let toastT;
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2200); }
 function vibrate(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
-function openModal(html) { const m = $('#modal'); m.innerHTML = '<div class="sheet">' + html + '</div>'; m.classList.remove('hidden'); }
-function closeModal() { const m = $('#modal'); m.classList.add('hidden'); m.innerHTML = ''; }
+let modalOnClose = null;      // se ejecuta al cerrar la ventana (por cualquier vía)
+function openModal(html) { const m = $('#modal'); modalOnClose = null; m.innerHTML = '<div class="sheet">' + html + '</div>'; m.classList.remove('hidden'); }
+function closeModal() { const m = $('#modal'); m.classList.add('hidden'); m.innerHTML = ''; const f = modalOnClose; modalOnClose = null; if (f) f(); }
 $('#updBanner').onclick = () => openUpdAvail();
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 function confirmBox(title, text, okLabel, onOk, danger) {
@@ -699,7 +704,7 @@ async function shareApp() {
 /* ---------- Copia de seguridad ---------- */
 const isNative = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 function backupJSON() {
-  return JSON.stringify({ app: 'ajedrez', format: 1, version: APP_VERSION, exported: new Date().toISOString(), archive: S.archive, game: S.game, roster: S.roster, solved: S.solved, theme: S.theme, board: S.board, coords: S.coords, fontScale: S.fontScale });
+  return JSON.stringify({ app: 'ajedrez', format: 1, version: APP_VERSION, exported: new Date().toISOString(), archive: S.archive, game: S.game, roster: S.roster, solved: S.solved, theme: S.theme, board: S.board, coords: S.coords, sound: S.sound, fontScale: S.fontScale });
 }
 const SAFE_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const UCI_RE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
@@ -1013,7 +1018,7 @@ $('#menuBtn').onclick = () => {
     <button id="mShareApp">📲 Compartir la app</button>
     <button id="mRoster">👥 Jugadores habituales</button>
     ${isPlay() ? '' : hasUpd() ? `<button id="mUpd" class="btn-gold">🎉 Actualizar a v${esc(S.updAvail.v)} (nueva)</button>` : '<button id="mUpd">🔄 Buscar actualizaciones</button>'}
-    <button id="mTheme">🎨 Colores y tablero</button>
+    <button id="mTheme">🎨 Colores, tablero y sonido</button>
     <button id="mHelp">❓ Cómo se usa</button>
     <button id="mGameRules">📖 Reglas del ajedrez</button>
     <button id="mAbout">ℹ️ Acerca de</button>
@@ -1032,15 +1037,7 @@ $('#menuBtn').onclick = () => {
   on('mPgn', () => sharePgn(g));
   on('mNew', () => { closeModal(); S.game = null; render(); });
   on('mPz', () => { closeModal(); REVIEW = null; if (S.game && S.game.result) S.game = null; S.draft.mode = 'puzzles'; if (S.game) { toast('Termina o sal de la partida para ir a los problemas'); return; } render(); });
-  on('mLeave', () => {
-    openModal(`<h3>🚪 Salir de la partida</h3><div class="sub">La partida no está terminada.</div><div class="menu">
-      <button id="lvSave">💾 Guardarla sin terminar<br><small class="mut">Queda en el historial para revisarla; no cuenta para el Elo</small></button>
-      <button id="lvDel" class="btn-red">Descartarla</button></div>
-      <div class="acts"><button class="btn-ghost" id="lvNo">Seguir jugando</button></div>`);
-    $('#lvNo').onclick = closeModal;
-    $('#lvSave').onclick = () => { closeModal(); THINK = null; Engine.reset(); pauseClock(); if (S.game.moves.length) archiveUpsert(S.game); S.game = null; render(); toast('Partida guardada'); };
-    $('#lvDel').onclick = () => { closeModal(); THINK = null; Engine.reset(); S.game = null; render(); toast('Partida descartada'); };
-  });
+  on('mLeave', openLeave);
   on('mAbout', () => {
     openModal(`<h3>Ajedrez</h3>
       <div class="sub">v${APP_VERSION}<br>© 2026 IT Canarias. Todos los derechos reservados.<br>itcanarias.com<br><br>Motor de juego, piezas y problemas propios de IT Canarias.</div>
@@ -1061,6 +1058,32 @@ $('#menuBtn').onclick = () => {
     if ($('#donate')) $('#donate').onclick = () => openExternal(DONATE_URL);
   });
 };
+
+function openLeave() {
+  openModal(`<h3>🚪 Salir de la partida</h3><div class="sub">La partida no está terminada.</div><div class="menu">
+    <button id="lvSave">💾 Guardarla sin terminar<br><small class="mut">Queda en el historial para revisarla; no cuenta para el Elo</small></button>
+    <button id="lvDel" class="btn-red">Descartarla</button></div>
+    <div class="acts"><button class="btn-ghost" id="lvNo">Seguir jugando</button></div>`);
+  $('#lvNo').onclick = closeModal;
+  $('#lvSave').onclick = () => { closeModal(); THINK = null; Engine.reset(); pauseClock(); if (S.game.moves.length) archiveUpsert(S.game); S.game = null; render(); toast('Partida guardada'); };
+  $('#lvDel').onclick = () => { closeModal(); THINK = null; Engine.reset(); S.game = null; render(); toast('Partida descartada'); };
+}
+/* Botón «atrás» de Android: cierra lo que esté abierto o vuelve a la pantalla anterior.
+   Devuelve false si ya no hay nada que cerrar (entonces la app se va al fondo). */
+function goBack() {
+  if (!$('#modal').classList.contains('hidden')) { closeModal(); return true; }
+  if (REVIEW) { closeReview(); return true; }
+  if (S.pz) { S.pz = null; PZ_MSG = ''; HINT = null; S.draft.mode = 'puzzles'; render(); return true; }
+  if (S.game && VIEW_PLY != null) { VIEW_PLY = null; render(); return true; }
+  if (S.game && S.game.result) { S.game = null; render(); return true; }
+  if (S.game) { if (S.game.moves.length) openLeave(); else { THINK = null; Engine.reset(); S.game = null; render(); } return true; }
+  if (S.draft.mode !== 'ai') { S.draft.mode = 'ai'; render(); return true; }
+  return false;
+}
+try {
+  const AppP = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App;
+  if (AppP && AppP.addListener) AppP.addListener('backButton', () => { if (!goBack()) { if (AppP.minimizeApp) AppP.minimizeApp().catch(() => AppP.exitApp()); else AppP.exitApp(); } });
+} catch (e) {}
 
 /* ================= Arranque ================= */
 applyTheme(S.theme);

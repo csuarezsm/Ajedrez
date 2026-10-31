@@ -12,6 +12,7 @@ const require = createRequire(import.meta.url);
 const A = require('../www/ajedrez.js'); globalThis.Ajedrez = A;
 const M = require('../www/motor.js');
 const PROBLEMAS = require('../www/problemas.js');
+const Aperturas = require('../www/aperturas.js');
 
 let passed = 0, failed = 0;
 const check = (name, cond, extra = '') => { if (cond) { passed++; console.log('  ✓ ' + name); } else { failed++; console.log('  ✗ ' + name + (extra ? ' → ' + extra : '')); } };
@@ -180,6 +181,16 @@ console.log('Motor');
   check('y no marca como error una jugada normal (1. e4)', ['mejor', 'buena'].includes(M.classify(loss(0), ev[0].best === moves[0])), 'pérdida ' + loss(0));
 }
 
+console.log('Aperturas');
+{
+  const bad = Aperturas.LISTA.filter(([l]) => { const p = P(); return !l.split(' ').every(u => { const m = p.fromUci(u); if (m) p.make(m); return !!m; }); });
+  check('todas las líneas de aperturas son legales', !bad.length, bad.map(x => x[1]).join(', '));
+  check('sin líneas repetidas', new Set(Aperturas.LISTA.map(x => x[0])).size === Aperturas.LISTA.length);
+  check('reconoce la Najdorf', Aperturas.aperturaDe('e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 a7a6 c1e3'.split(' ')) === 'Siciliana, variante Najdorf');
+  check('y se queda con la línea más larga conocida', Aperturas.aperturaDe('e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 h2h3'.split(' ')) === 'Española, defensa Morphy');
+  check('las líneas del libro del motor tienen nombre', M.BOOK_LINES.every(l => Aperturas.aperturaDe(l.split(' ')) !== ''));
+}
+
 console.log('Problemas de mate');
 {
   check('hay problemas de mate en 1, 2 y 3', [1, 2, 3].every(n => PROBLEMAS.filter(p => p.n === n).length >= 10), [1, 2, 3].map(n => PROBLEMAS.filter(p => p.n === n).length).join('/'));
@@ -284,6 +295,32 @@ console.log('Partida contra la máquina');
   await ctx.close();
 }
 
+console.log('Botón atrás, sonidos y aperturas en pantalla');
+{
+  const { p, ctx, errors } = await fresh();
+  check('en el inicio no hay nada que cerrar', await p.evaluate(() => goBack() === false));
+  await p.click('[data-mode="puzzles"]');
+  check('desde Problemas vuelve a la pantalla principal', await p.evaluate(() => goBack() === true && S.draft.mode === 'ai'));
+  await p.evaluate(() => openPuzzle(PROBLEMAS[0].id));
+  check('desde un problema vuelve a la lista', await p.evaluate(() => goBack() && !S.pz && S.draft.mode === 'puzzles'));
+  await p.evaluate(() => { S.draft.mode = 'local'; startGame({ mode: 'local', white: 'Ana', black: 'Luis' }); });
+  check('partida sin jugadas: se sale sin preguntar', await p.evaluate(() => goBack() && !S.game));
+  await p.evaluate(() => startGame({ mode: 'local', white: 'Ana', black: 'Luis' }));
+  await move(p, 'e2e4'); await move(p, 'e7e5'); await move(p, 'g1f3');
+  check('se ve el nombre de la apertura', (await p.textContent('.opening')).includes('caballo de rey'));
+  await p.click('[data-ply="1"]');
+  check('viendo una jugada anterior, atrás vuelve a la actual', await p.evaluate(() => goBack() && VIEW_PLY === null));
+  check('partida a medias: pregunta si guardarla', await p.evaluate(() => goBack() && !!document.querySelector('#lvSave')));
+  check('con la ventana abierta, atrás la cierra', await p.evaluate(() => goBack() && $('#modal').classList.contains('hidden') && !!S.game));
+  check('los sonidos no dan errores', await p.evaluate(async () => { ['move', 'capture', 'castle', 'check', 'end', 'ok', 'bad'].forEach(k => Sound.play(k)); await new Promise(r => setTimeout(r, 300)); return true; }));
+  check('tipo de sonido por jugada', await p.evaluate(() => { const P0 = new Ajedrez.Position(); const P1 = Ajedrez.replay(['e2e4', 'd7d5']).pos; const P2 = new Ajedrez.Position('r3k3/8/8/8/8/8/8/4K2R w K - 0 1'); return Sound.forMove(P0, 'e2e4') === 'move' && Sound.forMove(P1, 'e4d5') === 'capture' && Sound.forMove(P2, 'e1g1') === 'castle' && Sound.forMove(P2, 'h1h8') === 'check'; }));
+  await p.evaluate(() => { S.game.moves = ['a2a4', 'b7b5', 'a4b5', 'g8f6', 'b5b6', 'f6g8', 'b6a7', 'g8f6']; render(); });
+  await move(p, 'a7b8');
+  check('cerrar la elección de coronación la cancela sin romper nada', await p.evaluate(() => { goBack(); return S.game.moves.length === 8 && BS.sel === null; }));
+  check('sin errores en la página', !errors.length, errors.join(' | '));
+  await ctx.close();
+}
+
 console.log('Dos jugadores, coronación, reloj y tablas');
 {
   const { p, ctx, errors } = await fresh();
@@ -336,6 +373,11 @@ console.log('Modo aprendizaje y pistas');
   const warned = await waitFor(p, () => !!document.querySelector('#lnUndo'), null, 20000);
   check('avisa al regalar la dama', warned);
   if (warned) { await p.click('#lnUndo'); check('y se puede deshacer', await p.evaluate(() => S.game.moves.length === 4 && !LEARN_WAIT)); }
+  await move(p, 'd1g4');
+  if (await waitFor(p, () => !!document.querySelector('#lnUndo'), null, 20000)) {
+    await p.evaluate(() => goBack());
+    check('cerrar el aviso con atrás equivale a seguir: juega la máquina', await waitFor(p, () => !LEARN_WAIT && S.game.moves.length === 6, null, 20000));
+  } else check('el aviso vuelve a salir', false);
   check('sin errores en la página', !errors.length, errors.join(' | '));
   await ctx.close();
 }

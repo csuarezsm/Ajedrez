@@ -2,7 +2,7 @@
 
 Ajedrez para Android: contra la máquina, dos jugadores en el mismo móvil y problemas de mate.
 App Capacitor + web (`www/`). No usa servidor: todos los datos se guardan en el móvil.
-Paquete: `com.itcanarias.ajedrez` · versión 1.0.0
+Paquete: `com.itcanarias.ajedrez` · versión 1.0.1
 
 © 2026 IT Canarias. Todos los derechos reservados.
 
@@ -16,6 +16,9 @@ Paquete: `com.itcanarias.ajedrez` · versión 1.0.0
 - **Problemas**: 66 problemas de mate (24 en 1, 24 en 2 y 18 en 3). La máquina defiende lo mejor posible; se acepta cualquier jugada que mantenga el mate. Pistas y solución.
 - **Clasificación**: Elo (inicial 1200, K = 40 las 10 primeras partidas y después 24). La máquina tiene un Elo fijo por nivel. Ficha de jugador, récords e historial con revisión jugada a jugada.
 - **PGN**: exportar una partida o todas, e importar archivos PGN (con comentarios y variantes). Las importadas no cuentan para el Elo.
+- **Aperturas**: nombre de la apertura bajo las jugadas (lista propia en `www/aperturas.js`, unas 140 líneas).
+- **Sonidos** al mover, capturar, enrocar, dar jaque y al terminar. Se sintetizan en la app (sin archivos de audio) y se pueden quitar en ⋮ → Colores, tablero y sonido.
+- **Botón atrás de Android**: cierra la ventana abierta, vuelve de la revisión o del problema, vuelve a la partida actual si estabas viendo una jugada anterior, y en una partida a medias pregunta si guardarla o descartarla. En la pantalla de inicio deja la app en segundo plano.
 - **Igual que la plantilla**: temas de colores, colores del tablero, coordenadas, tamaño de letra, horizontal y tablet, márgenes de Android, bienvenida, Acerca de con privacidad y donativo (no en Play), compartir la app, copias automáticas, enviar partidas al grupo y borrar datos.
 
 ## Archivos (`www/`)
@@ -27,6 +30,7 @@ Paquete: `com.itcanarias.ajedrez` · versión 1.0.0
 | `motor-worker.js` | Ejecuta el motor en segundo plano. Si el navegador no permite Workers, la app calcula en el propio hilo. |
 | `piezas.js` | Piezas en SVG dibujadas para esta app. |
 | `problemas.js` | Problemas de mate, generados con `tools/generar-problemas.js`. |
+| `aperturas.js` | Nombres de aperturas. |
 | `juego.js` | Tablero (tocar o arrastrar, animaciones), partida, reloj, análisis, problemas y PGN. |
 | `index.html` | Estilos, menú, temas, actualizador, copias, clasificación y arranque (de la plantilla). |
 
