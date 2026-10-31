@@ -2,7 +2,7 @@
 
 Ajedrez para Android: contra la máquina, dos jugadores en el mismo móvil y problemas de mate.
 App Capacitor + web (`www/`). Todos los datos se guardan en el móvil; solo el juego en línea usa el servidor de juegos (nombre y jugadas, sin guardarlos).
-Paquete: `com.itcanarias.ajedrez` · versión 1.0.4
+Paquete: `com.itcanarias.ajedrez` · versión 1.0.5
 
 © 2026 IT Canarias. Todos los derechos reservados.
 
@@ -16,7 +16,7 @@ Paquete: `com.itcanarias.ajedrez` · versión 1.0.4
 - **Problemas**: 170 problemas de mate (50 en 1, 70 en 2 y 50 en 3), ordenados de fácil a difícil. La máquina defiende lo mejor posible; se acepta cualquier jugada que mantenga el mate. Pistas y solución.
 - **Problema del día** (el mismo para todos ese día) y **Elo de problemas**: cada problema tiene una dificultad aproximada y solo cuenta el primer intento. «Siguiente a tu nivel» elige el más cercano a tu Elo.
 - **Editor de posiciones**: poner y quitar piezas, turno y enroques, copiar o pegar FEN, analizar la posición y jugar desde ella. Se abre desde el menú o desde el análisis («✏️ Editar»).
-- **Jugar en línea** contra el servidor `wss://juegos.itcanarias.com/ws` (repo `csuarezsm/juegos-servidor`, instalado en el VPS): salas con código para compartir por WhatsApp, partida validada por el servidor, reloj en el servidor, reconexión, tablas y revancha. Cuenta para el Elo. La dirección está en `ONLINE_URL` (`www/juego.js`).
+- **Jugar en línea** con el servidor común de juegos de IT Canarias (`wss://juegos.itcanarias.com/ws`, repo `csuarezsm/juegos-servidor`, el mismo que Chinchón): salas con código para compartir por WhatsApp, ficha propia para volver a la silla, partida validada por el servidor, reloj en el servidor, tablas y revancha. Salir en juego cuenta como abandono. Cuenta para el Elo. La dirección está en `ONLINE_URL` (`www/juego.js`).
 - **Repasa tus errores**: con los errores (?) y errores graves (??) de las partidas analizadas se forman ejercicios: la posición antes del error y hay que encontrar algo mejor. Se acepta la jugada del motor o cualquier otra que no pierda más de 0,7 peones respecto a ella. Contra la máquina solo salen tus errores; en partidas de dos jugadores, los de los dos. Botón para analizar de golpe hasta 5 partidas sin analizar.
 - **Jugar desde aquí**: desde cualquier jugada del análisis, desde un problema o desde un error repasado se empieza una partida nueva desde esa posición, contra la máquina o a dos jugadores. Estas partidas no cuentan para el Elo.
 - **Clasificación**: Elo (inicial 1200, K = 40 las 10 primeras partidas y después 24). La máquina tiene un Elo fijo por nivel. Ficha de jugador, récords e historial con revisión jugada a jugada.
@@ -58,7 +58,7 @@ Calibrados en la 1.0.3 con `tools/calibrar-niveles.js` (partidas entre niveles v
 
 - La partida se guarda como `moves` (UCI) + `startFen`; `Ajedrez.replay()` reconstruye todo. El servidor común podrá usar `ajedrez.js` tal cual para validar las jugadas.
 - El reloj guarda `times` y `tick`, igual que lo hará el servidor.
-- El servidor común está en el repo `csuarezsm/juegos-servidor`. `tests/servidor/` es una copia para probar la app contra él en `npm test`.
+- El servidor común está en el repo `csuarezsm/juegos-servidor`. `tests/servidor/` es una copia de su `src/` para probar la app contra él en `npm test`.
 
 ## Publicar una versión
 

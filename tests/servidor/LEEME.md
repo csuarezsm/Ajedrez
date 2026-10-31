@@ -1,2 +1,2 @@
-Copia del servidor de juegos en línea (repo `csuarezsm/juegos-servidor`) para probar la app contra él en `npm test`.
-Si cambia el protocolo del servidor, hay que volver a copiar `servidor.js` y `juegos/ajedrez.js`.
+Copia del servidor común de juegos (repo `csuarezsm/juegos-servidor`, carpetas `src/` y `motores/`) para probar la app contra él en `npm test`.
+`motores/ajedrez/ajedrez.js` apunta a `www/ajedrez.js` de esta app. Si cambia el servidor, hay que volver a copiar `src/`.

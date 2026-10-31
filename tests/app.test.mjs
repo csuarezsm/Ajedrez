@@ -474,12 +474,14 @@ console.log('Repasa tus errores y jugar desde aquí');
   await ctx.close();
 }
 
-console.log('Jugar en línea (con el servidor de juegos)');
+console.log('Jugar en línea (con el servidor común de juegos)');
 {
-  process.env.SALAS_POR_IP_HORA = '1000';
-  const SV = require('./servidor/servidor.js');
-  await new Promise(r => SV.server.listen(0, r));
-  const WS = `ws://localhost:${SV.server.address().port}/ws`;
+  const os = await import('node:os'), fs = await import('node:fs');
+  Object.assign(process.env, { LIMITE_MSG: '5000', DATA_DIR: fs.mkdtempSync(join(os.tmpdir(), 'juegos-')) });
+  const { crearServidor } = require('./servidor/src/server.js');
+  const { server: SVS } = crearServidor();
+  await new Promise(r => SVS.listen(0, '127.0.0.1', r));
+  const WS = `ws://127.0.0.1:${SVS.address().port}/ws`;
   const A1 = await fresh({ onboarded: true, draft: { mode: 'online', ai: { name: 'Carlos' } } }, null, WS);
   const B1 = await fresh({ onboarded: true, draft: { mode: 'online', ai: { name: 'Tere' } } }, null, WS);
   const a = A1.p, b = B1.p;
@@ -487,10 +489,11 @@ console.log('Jugar en línea (con el servidor de juegos)');
   check('la app apunta al servidor de IT Canarias', (await readFile(join(ROOT, 'juego.js'), 'utf8')).includes("'wss://juegos.itcanarias.com/ws'"));
   await a.click('[data-ocolor="w"]'); await a.click('[data-oclock="5+0"]'); await a.click('#oCreate');
   check('crear sala: aparece el código', await waitFor(a, () => S.game && S.game.mode === 'online' && /^[A-Z2-9]{4}$/.test(S.game.room) && !!document.querySelector('.olcode')));
+  check('la app guarda su ficha para volver a la silla', await a.evaluate(() => /^[A-Za-z0-9_-]{18}$/.test(S.onlineToken)));
   const code = await a.evaluate(() => S.game.room);
   await b.fill('#oCode', code.toLowerCase()); await b.click('#oJoin');
-  check('el rival entra con el código', await waitFor(b, () => S.game && S.game.ready && S.game.seat === 1 && S.game.white === 'Carlos'));
-  check('y el creador lo ve', await waitFor(a, () => S.game.ready && S.game.black === 'Tere'));
+  check('el rival entra con el código y empieza sola', await waitFor(b, () => S.game && S.game.ready && S.game.seat === 1 && S.game.white === 'Carlos'));
+  check('y el creador lo ve', await waitFor(a, () => S.game.ready && S.game.black === 'Tere' && S.game.seat === 0));
   check('cada uno ve el tablero desde su color', await a.evaluate(() => orientOf(S.game) === 0) && await b.evaluate(() => orientOf(S.game) === 1));
   await tap(b, 'e7'); await tap(b, 'e5');
   check('no se puede mover en el turno del rival', await b.evaluate(() => S.game.moves.length === 0));
@@ -499,16 +502,17 @@ console.log('Jugar en línea (con el servidor de juegos)');
   check('el reloj del rival corre', await waitFor(b, () => !!S.game.tick && S.game.times[1] <= 300000));
   await move(b, 'e7e5'); await waitFor(a, () => S.game.moves.length === 2);
   await move(a, 'g2g4'); await waitFor(b, () => S.game.moves.length === 3);
-  // b se desconecta y vuelve (como al cerrar la app)
   await b.evaluate(() => Online.close());
   check('el rival ve la desconexión', await waitFor(a, () => S.game.oppOnline === false));
   await b.evaluate(() => resumeOnline());
-  check('al volver, sigue la partida', await waitFor(a, () => S.game.oppOnline === true) && await waitFor(b, () => S.game.moves.length === 3));
+  check('al volver, sigue la partida en su silla', await waitFor(a, () => S.game.oppOnline === true) && await waitFor(b, () => S.game.moves.length === 3 && S.game.seat === 1));
   await move(b, 'd8h4');
   check('mate: los dos lo reciben y se guarda', await waitFor(a, () => S.game.result === '0-1' && S.game.reason === 'mate' && S.archive.some(x => x.mode === 'online')) && await waitFor(b, () => S.game.result === '0-1' && S.archive.length === 1));
   check('cuenta para el Elo', await b.evaluate(() => { const t = eloTable(); return t.find(o => o.name === 'Tere').elo > 1200 && t.find(o => o.name === 'Carlos').elo < 1200; }));
   check('el texto dice quién gana', (await a.textContent('.gstatus')).includes('Tere'));
-  await a.click('#olRematch'); await b.click('#olRematch');
+  await a.click('#olRematch');
+  check('la revancha pedida se ve en el otro móvil', await waitFor(b, () => document.querySelector('.olbanner') && document.querySelector('.olbanner').textContent.includes('revancha')));
+  await b.click('#olRematch');
   check('revancha con los colores cambiados', await waitFor(a, () => !S.game.result && S.game.seat === 1 && S.game.ready && S.game.moves.length === 0) && await waitFor(b, () => S.game.seat === 0 && !S.game.result));
   await move(b, 'd2d4'); await waitFor(a, () => S.game.moves.length === 1);
   await move(a, 'd7d5'); await waitFor(b, () => S.game.moves.length === 2);
@@ -518,11 +522,12 @@ console.log('Jugar en línea (con el servidor de juegos)');
   check('tablas aceptadas', await waitFor(b, () => S.game.result === '1/2-1/2' && S.game.reason === 'acuerdo'));
   await b.click('#olLeave');
   check('salir vuelve a la pantalla de en línea', await b.evaluate(() => !S.game && S.draft.mode === 'online'));
+  check('y el otro ve que su rival se ha ido', await waitFor(a, () => S.game.oppGone === true && !document.querySelector('#olRematch')));
   await b.fill('#oCode', 'ZZZZ'); await b.click('#oJoin');
   check('código que no existe: aviso', await waitFor(b, () => ONLINE.err.includes('código')));
   check('sin errores en la página', !A1.errors.length && !B1.errors.length, A1.errors.concat(B1.errors).join(' | '));
   await A1.ctx.close(); await B1.ctx.close();
-  clearInterval(SV.latido); SV.server.close();
+  SVS.close();
 }
 
 console.log('PGN, copias y datos maliciosos');
