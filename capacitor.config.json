@@ -1,0 +1,9 @@
+{
+  "appId": "com.itcanarias.ajedrez",
+  "appName": "Ajedrez",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#121c27",
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}

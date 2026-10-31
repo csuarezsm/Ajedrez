@@ -1,0 +1,479 @@
+// Pruebas automáticas de Ajedrez (IT Canarias)
+// Se ejecutan en GitHub antes de compilar: si alguna falla, no se publica la versión.
+// Uso local: node tests/app.test.mjs
+import { chromium } from 'playwright';
+import http from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { extname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const A = require('../www/ajedrez.js'); globalThis.Ajedrez = A;
+const M = require('../www/motor.js');
+const PROBLEMAS = require('../www/problemas.js');
+
+let passed = 0, failed = 0;
+const check = (name, cond, extra = '') => { if (cond) { passed++; console.log('  ✓ ' + name); } else { failed++; console.log('  ✗ ' + name + (extra ? ' → ' + extra : '')); } };
+const P = fen => new A.Position(fen);
+const play = (pos, ...sans) => { for (const s of sans) { const m = pos.fromSan(s); if (!m) throw new Error('Jugada no válida en la prueba: ' + s); pos.make(m); } return pos; };
+let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+
+/* ================= Reglas ================= */
+console.log('Generador de jugadas (perft)');
+{
+  const T = [
+    [A.START_FEN, [20, 400, 8902, 197281]],
+    ['r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1', [48, 2039, 97862]],
+    ['8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1', [14, 191, 2812, 43238]],
+    ['r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1', [6, 264, 9467]],
+    ['rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8', [44, 1486, 62379]],
+    ['r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10', [46, 2079, 89890]],
+  ];
+  for (const [f, exp] of T) {
+    const p = P(f), got = exp.map((_, i) => A.perft(p, i + 1));
+    check('perft ' + f.split(' ')[0].slice(0, 20) + '…', got.join() === exp.join(), got.join() + ' ≠ ' + exp.join());
+    check('FEN se conserva', p.fen() === f, p.fen());
+  }
+}
+
+console.log('Reglas especiales');
+{
+  // enroque: no se puede pasar por una casilla atacada
+  let p = P('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1');
+  check('enroques posibles', !!p.fromSan('O-O') && !!p.fromSan('O-O-O'));
+  p = P('r3k2r/8/8/8/8/5r2/8/R3K2R w KQkq - 0 1');
+  check('no se enroca pasando por casilla atacada', !p.fromSan('O-O') && !!p.fromSan('O-O-O'));
+  p = P('r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1'); play(p, 'Rh2', 'Rh7', 'Rh1', 'Rh8');
+  check('al mover la torre se pierde el enroque de ese lado', !p.fromSan('O-O') && !!p.fromSan('O-O-O'));
+  p = P('4k3/8/8/8/8/8/8/R3K2r w Q - 0 1');
+  check('en jaque no hay enroque', !p.fromSan('O-O-O'));
+  // captura al paso
+  p = P(); play(p, 'e4', 'a6', 'e5', 'd5');
+  const ep = p.fromSan('exd6');
+  check('captura al paso disponible', !!ep && p.san(ep) === 'exd6');
+  p.make(ep); check('el peón capturado al paso desaparece', !p.b[A.sqParse('d5')] && p.fen().startsWith('rnbqkbnr/1pp1pppp/p2P4/8'));
+  p = P(); play(p, 'e4', 'a6', 'e5', 'd5', 'a3', 'a5');
+  check('la captura al paso caduca', !p.fromSan('exd6'));
+  // coronación
+  p = P('8/P6k/8/8/8/8/8/K7 w - - 0 1');
+  const promos = p.legal().filter(m => A.mFlags(m) & A.F_PROMO).map(m => p.uci(m)).sort();
+  check('coronación a las cuatro piezas', promos.join() === 'a7a8b,a7a8n,a7a8q,a7a8r', promos.join());
+  check('SAN de coronación con jaque', p.san(p.fromUci('a7a8q')) === 'a8=Q');
+  p = P('k7/8/1K6/8/8/8/8/6Q1 w - - 0 1');
+  check('SAN con mate', p.san(p.fromSan('Qg8')) === 'Qg8#');
+  // desambiguación
+  p = P('4k3/8/8/8/8/8/4K3/R6R w - - 0 1');
+  check('desambiguación por columna', !!p.fromSan('Rad1') && p.san(p.fromSan('Rad1')) === 'Rad1');
+  p = P('4k3/8/8/R7/8/8/8/R3K3 w - - 0 1');
+  check('desambiguación por fila', p.san(p.fromSan('R1a3')) === 'R1a3');
+  check('notación en español', A.sanEs('Nf3') === 'Cf3' && A.sanEs('Qxe7+') === 'Dxe7+' && A.sanEs('exd8=Q#') === 'exd8=D#' && A.sanEs('O-O') === 'O-O');
+  // FEN no válidas
+  let threw = 0; for (const f of ['8/8/8/8/8/8/8/8 w - - 0 1', 'xx', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP w KQkq - 0 1', '4k3/8/8/8/8/8/8/4K2R b - - 0 1 extra', 'k7/8/8/8/8/8/8/K6R w - - 0 1']) { try { P(f); } catch (e) { threw++; } }
+  check('FEN no válidas se rechazan (sin reyes, filas de menos, jaque al que no juega)', threw >= 3, threw + ' de 5');
+}
+
+console.log('Final de la partida');
+{
+  let p = P(); play(p, 'f3', 'e5', 'g4', 'Qh4');
+  let st = A.status(p); check('mate del loco', st.over && st.result === '0-1' && st.reason === 'mate');
+  p = P('7k/5Q2/6K1/8/8/8/8/8 b - - 0 1'); st = A.status(p);
+  check('rey ahogado = tablas', st.over && st.result === '1/2-1/2' && st.reason === 'ahogado');
+  const ins = ['8/8/4k3/8/8/4K3/8/8 w - - 0 1', '8/8/4k3/8/8/4K3/5N2/8 w - - 0 1', '8/8/4k3/8/8/4K3/5B2/8 w - - 0 1', '8/5b2/4k3/8/8/4K3/2B5/8 w - - 0 1'];
+  check('material insuficiente (R-R, R+C, R+A, alfiles del mismo color)', ins.every(f => A.status(P(f)).reason === 'material'));
+  const suf = ['8/8/4k3/8/8/4K3/5P2/8 w - - 0 1', '8/4b3/4k3/8/8/4K3/2B5/8 w - - 0 1', '8/8/4k3/8/8/4K3/2NN4/8 w - - 0 1'];
+  check('con peón, alfiles de distinto color o dos caballos se sigue jugando', suf.every(f => !A.status(P(f)).over));
+  p = P(); play(p, 'Nf3', 'Nf6', 'Ng1', 'Ng8', 'Nf3', 'Nf6', 'Ng1');
+  check('dos repeticiones aún no son tablas', !A.status(p).over);
+  play(p, 'Ng8'); st = A.status(p);
+  check('triple repetición = tablas', st.over && st.reason === 'repeticion');
+  p = P('8/8/4k3/8/8/4K3/4R3/8 w - - 99 80'); play(p, 'Ra2'); st = A.status(p);
+  check('regla de los 50 movimientos', st.over && st.reason === 'cincuenta');
+  p = P('8/8/4k3/8/8/4K3/P7/8 w - - 99 80'); play(p, 'a4');
+  check('mover un peón reinicia la cuenta', !A.status(p).over && p.half === 0);
+  check('¿puede dar mate? (para la caída de bandera)', !P('8/8/4k3/8/8/4K3/5N2/8 w - - 0 1').canMate(0) && P('8/8/4k3/8/8/4K3/5P2/8 w - - 0 1').canMate(0) && !P('8/8/4k3/8/8/4K3/5P2/8 w - - 0 1').canMate(1));
+}
+
+console.log('Cientos de partidas al azar');
+{
+  let ended = 0, okHash = true, okPgn = true, okInv = true, plies = 0;
+  const N = 300;
+  for (let g = 0; g < N; g++) {
+    const p = P(), moves = [];
+    for (let i = 0; i < 3000; i++) {
+      const st = A.status(p); if (st.over) { ended++; break; }
+      const L = p.legal(); const m = L[Math.floor(rnd() * L.length)];
+      moves.push(p.uci(m)); p.make(m); plies++;
+      const h1 = p.h1, h2 = p.h2; p.computeHash(); if (h1 !== p.h1 || h2 !== p.h2) okHash = false;
+      let kings = [0, 0], cnt = [0, 0]; for (let s = 0; s < 128; s++) { if (s & 0x88) { s += 7; continue; } const q = p.b[s]; if (q) { cnt[q >> 3]++; if ((q & 7) === 6) kings[q >> 3]++; } }
+      if (kings[0] !== 1 || kings[1] !== 1 || cnt[0] > 16 || cnt[1] > 16 || p.inCheck(p.turn ^ 1)) okInv = false;
+    }
+    // ida y vuelta por PGN
+    const st = A.status(p);
+    const pgn = A.toPgn({ moves, white: 'Blancas', black: 'Negras', result: st.over ? st.result : '*' });
+    const back = A.parsePgn(pgn)[0];
+    if (!back || back.moves.join() !== moves.join() || back.error) okPgn = false;
+    // deshacer todas las jugadas vuelve a la posición inicial
+    if (g % 30 === 0) { const q = P(); const ms = []; for (const u of moves) { const m = q.fromUci(u); ms.push(m); q.make(m); } while (ms.length) q.unmake(ms.pop()); if (q.fen() !== A.START_FEN) okInv = false; }
+  }
+  check(`las ${N} partidas terminan (mate, ahogado o tablas)`, ended === N, ended + '/' + N);
+  check('la clave de posición incremental coincide siempre con la calculada (' + plies + ' jugadas)', okHash);
+  check('nunca hay dos reyes de un color, más de 16 piezas o un rey en jaque sin turno', okInv);
+  check('todas pasan por PGN y vuelven idénticas', okPgn);
+}
+
+console.log('PGN');
+{
+  const txt = `[Event "Prueba"]
+[White "Ana \\"la torre\\""]
+[Black "Luis"]
+[Result "1-0"]
+
+1. e4 {apertura} e5 2. Nf3 (2. f4 exf4) Nc6 3. Bb5 a6 $1 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6 8. c3 O-O 1-0
+
+[Event "Segunda"]
+[White "X"]
+[Black "Y"]
+[Result "0-1"]
+
+1. f3 e5 2. g4 Qh4# 0-1
+
+[Event "Rota"]
+[Result "*"]
+
+1. e4 e5 2. Ke3 *
+`;
+  const G = A.parsePgn(txt);
+  check('lee varias partidas', G.length === 3, G.length);
+  check('ignora comentarios, variantes y anotaciones', G[0].moves.length === 16 && G[0].moves[8] === 'e1g1', G[0].moves.join(' '));
+  check('etiquetas con comillas escapadas', G[0].tags.White === 'Ana "la torre"');
+  check('resultado y mate', G[1].result === '0-1' && G[1].moves.length === 4);
+  check('jugada ilegal: se avisa y se guarda hasta ahí', !!G[2].error && G[2].moves.length === 2);
+  const fen = '4k3/8/8/8/8/8/4P3/4K3 b - - 0 40';
+  const out = A.toPgn({ moves: ['e8d7', 'e2e4'], startFen: fen, white: 'A', black: 'B', result: '*' });
+  check('PGN desde una posición (FEN) con jugada de negras', out.includes('[SetUp "1"]') && out.includes('40... Kd7 41. e4'), out);
+  const back = A.parsePgn(out)[0];
+  check('y se vuelve a leer igual', back.startFen === fen && back.moves.join() === 'e8d7,e2e4');
+}
+
+/* ================= Motor ================= */
+console.log('Motor');
+{
+  const sym = f => { const [b, t, c, e, h, n] = f.split(' '); const sw = s => s.replace(/[a-z]/gi, ch => ch === ch.toLowerCase() ? ch.toUpperCase() : ch.toLowerCase()); return [b.split('/').reverse().map(sw).join('/'), t === 'w' ? 'b' : 'w', c === '-' ? '-' : sw(c).split('').sort((x, y) => 'KQkq'.indexOf(x) - 'KQkq'.indexOf(y)).join(''), e === '-' ? '-' : e[0] + (9 - +e[1]), h, n].join(' '); };
+  const fens = ['r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1', '8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1', 'r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4'];
+  check('la evaluación es simétrica para blancas y negras', fens.every(f => M.evaluate(P(f)) === M.evaluate(P(sym(f)))));
+  const mate1 = 'r1bqkb1r/pppp1ppp/2n2n2/4p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 4 4';
+  check('encuentra el mate en 1 en todos los niveles (2–6)', [2, 3, 4, 5, 6].every(l => M.levelMove(P(mate1), l, null, { rnd, nodes: 20000, timeMs: 0, noBook: true }).move === 'h5f7'));
+  const mate2 = 'r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq - 1 0';
+  const r2 = M.think(P(mate2), { nodes: 300000 });
+  check('mate en 2 (con sacrificio)', r2.score > M.MATE_BOUND && r2.move === 'd5f6', JSON.stringify(r2));
+  const hang = 'rnb1kbnr/pppp1ppp/8/4p1q1/4P3/3P4/PPP2PPP/RNBQKBNR w KQkq - 1 3';
+  check('captura la dama que se ofrece (niveles 3–6)', [3, 4, 5, 6].every(l => M.levelMove(P(hang), l, null, { rnd, nodes: 20000, timeMs: 0, noBook: true }).move === 'c1g5'));
+  check('el libro de aperturas responde a 1. e4', ['e7e5', 'c7c5', 'e7e6', 'c7c6', 'd7d5', 'd7d6', 'g8f6'].includes(M.bookMove(['e2e4'], rnd)));
+  check('todas las líneas del libro son legales', M.BOOK_LINES.every(l => { const p = P(); return l.split(' ').every(u => { const m = p.fromUci(u); if (m) p.make(m); return !!m; }); }));
+  // análisis: una partida con la dama regalada
+  const moves = ['e2e4', 'e7e5', 'd1h5', 'b8c6', 'h5e5'];
+  const ev = M.handle({ op: 'analyse', moves, timeMs: 120 });
+  const loss = (i) => Math.max(0, M.capScore(ev[i].score) - (-M.capScore(ev[i + 1].score)));
+  check('el análisis devuelve una evaluación por posición', ev.length === moves.length + 1);
+  check('marca como error grave regalar la dama (5. Dxe5+?? Cxe5)', M.classify(loss(4), ev[4].best === moves[4]) === 'grave', 'pérdida ' + loss(4));
+  check('y no marca como error una jugada normal (1. e4)', ['mejor', 'buena'].includes(M.classify(loss(0), ev[0].best === moves[0])), 'pérdida ' + loss(0));
+}
+
+console.log('Problemas de mate');
+{
+  check('hay problemas de mate en 1, 2 y 3', [1, 2, 3].every(n => PROBLEMAS.filter(p => p.n === n).length >= 10), [1, 2, 3].map(n => PROBLEMAS.filter(p => p.n === n).length).join('/'));
+  check('ids únicos', new Set(PROBLEMAS.map(p => p.id)).size === PROBLEMAS.length);
+  let bad = [];
+  for (const z of PROBLEMAS) {
+    const p = P(z.fen);
+    if (z.sol.length !== 2 * z.n - 1) { bad.push(z.id + ' longitud'); continue; }
+    if (z.n > 1 && M.mateIn(P(z.fen), z.n - 1)) { bad.push(z.id + ' hay mate más corto'); continue; }
+    let ok = true; for (const u of z.sol) { const m = p.fromUci(u); if (!m) { ok = false; break; } p.make(m); }
+    const st = A.status(p);
+    if (!ok || !(st.over && st.reason === 'mate')) bad.push(z.id + ' la solución no da mate');
+  }
+  check('cada solución es legal, acaba en mate y no hay mate más corto', !bad.length, bad.join(', '));
+}
+
+console.log('Fuerza de los niveles');
+{
+  const NODES = { 4: 12000, 5: 30000, 6: 60000 };
+  const game = (lw, lb) => {
+    const pos = P(), moves = [];
+    for (let ply = 0; ply < 260; ply++) {
+      const st = A.status(pos); if (st.over) return st.result;
+      const lv = pos.turn === 0 ? lw : lb;
+      const r = M.levelMove(pos, lv, moves, { rnd, timeMs: 0, nodes: NODES[lv] });
+      pos.make(pos.fromUci(r.move)); moves.push(r.move);
+    }
+    return '1/2-1/2';
+  };
+  const match = (a, b, n) => { let s = 0; for (let i = 0; i < n; i++) { const aw = i % 2 === 0, r = aw ? game(a, b) : game(b, a); s += r === '1/2-1/2' ? 0.5 : ((r === '1-0') === aw ? 1 : 0); } return s / n; };
+  const t0 = Date.now();
+  const s31 = match(3, 1, 10); check('el nivel 3 gana al 1 (más del 80 % de los puntos)', s31 > 0.8, Math.round(s31 * 100) + '%');
+  const s53 = match(5, 3, 8); check('el nivel 5 gana al 3 (más del 50 % de los puntos)', s53 > 0.5, Math.round(s53 * 100) + '%');
+  console.log('    (' + Math.round((Date.now() - t0) / 1000) + ' s)');
+}
+
+/* ================= Interfaz ================= */
+const ROOT = fileURLToPath(new URL('../www/', import.meta.url));
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png' };
+const server = http.createServer(async (req, res) => {
+  const path = normalize(decodeURIComponent(req.url.split('?')[0])).replace(/^(\.\.[/\\])+/, '');
+  try { const f = await readFile(join(ROOT, path === '/' ? 'index.html' : path)); res.writeHead(200, { 'content-type': TYPES[extname(path)] || 'text/html' }); res.end(f); }
+  catch { res.writeHead(404); res.end(); }
+});
+await new Promise(r => server.listen(0, r));
+const URL_APP = `http://localhost:${server.address().port}/`;
+const browser = await chromium.launch();
+async function fresh(state, viewport) {
+  const ctx = await browser.newContext({ viewport: viewport || { width: 412, height: 860 }, isMobile: true, hasTouch: true, serviceWorkers: 'block', acceptDownloads: true });
+  await ctx.route('https://api.github.com/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ tag_name: 'v0.0.1', assets: [] }) }));
+  const p = await ctx.newPage();
+  const errors = [];
+  p.on('pageerror', e => errors.push(e.message));
+  await p.addInitScript(st => { if (st && !sessionStorage.getItem('seeded')) { localStorage.setItem('ajedrez.v1', JSON.stringify(st)); sessionStorage.setItem('seeded', '1'); } }, state || { onboarded: true });
+  await p.goto(URL_APP);
+  return { p, ctx, errors };
+}
+async function sqXY(p, sq) {
+  return p.evaluate(sq => {
+    const el = document.querySelector('#board'), r = el.getBoundingClientRect();
+    const orient = S.pz ? new Ajedrez.Position(pzById(S.pz.id).fen).turn : REVIEW ? 0 : orientOf(S.game);
+    const f = sq.charCodeAt(0) - 97, rk = +sq[1] - 1, x = orient ? 7 - f : f, y = orient ? rk : 7 - rk;
+    return [r.left + (x + .5) * r.width / 8, r.top + (y + .5) * r.height / 8];
+  }, sq);
+}
+async function tap(p, sq) { const [x, y] = await sqXY(p, sq); await p.mouse.click(x, y); await p.waitForTimeout(40); }
+async function move(p, uci) { await tap(p, uci.slice(0, 2)); await tap(p, uci.slice(2, 4)); }
+async function drag(p, from, to) { const [x1, y1] = await sqXY(p, from), [x2, y2] = await sqXY(p, to); await p.mouse.move(x1, y1); await p.mouse.down(); await p.mouse.move((x1 + x2) / 2, (y1 + y2) / 2, { steps: 4 }); await p.mouse.move(x2, y2, { steps: 4 }); await p.mouse.up(); await p.waitForTimeout(60); }
+const waitFor = (p, fn, arg, timeout = 15000) => p.waitForFunction(fn, arg, { timeout }).then(() => true, () => false);
+
+console.log('Partida contra la máquina');
+{
+  const { p, ctx, errors } = await fresh();
+  await p.fill('#aName', 'Carlos');
+  await p.click('[data-alevel="1"]');
+  await p.click('#start');
+  check('empieza la partida con el nombre y el nivel', await p.evaluate(() => S.game.mode === 'ai' && S.game.white === 'Carlos' && S.game.level === 1 && S.roster.includes('Carlos')));
+  await move(p, 'e2e4');
+  check('se mueve tocando pieza y casilla', await p.evaluate(() => S.game.moves[0] === 'e2e4'));
+  check('la máquina responde', await waitFor(p, () => S.game.moves.length === 2));
+  await drag(p, 'g1', 'f3');
+  check('se mueve arrastrando la pieza', await p.evaluate(() => S.game.moves[2] === 'g1f3'));
+  await waitFor(p, () => S.game.moves.length === 4);
+  await tap(p, 'e1'); await tap(p, 'e3');
+  check('una jugada ilegal no se hace', await p.evaluate(() => S.game.moves.length === 4));
+  await tap(p, 'd2');
+  check('al tocar una pieza se marcan sus jugadas', await p.evaluate(() => document.querySelectorAll('.sq.tgt').length === 2));
+  await tap(p, 'd2');
+  await p.click('#gUndo');
+  check('deshacer quita tu jugada y la de la máquina', await p.evaluate(() => S.game.moves.length === 2 && S.game.undos === 1));
+  await p.click('[data-ply="1"]');
+  check('tocar una jugada de la lista enseña esa posición', await p.evaluate(() => VIEW_PLY === 1 && !!document.querySelector('#gLive')));
+  await p.click('#gLive');
+  await p.click('#gResign'); await p.click('#cOk');
+  check('rendirse termina la partida y la guarda', await p.evaluate(() => S.game.result === '0-1' && S.game.reason === 'abandono' && S.archive.length === 1 && S.archive[0].id === S.game.id));
+  check('la derrota baja el Elo', await p.evaluate(() => { const o = eloTable().find(x => x.name === 'Carlos'); return o && o.elo < 1200 && o.pj === 1; }));
+  await p.click('#gRematch');
+  check('la revancha cambia de color', await p.evaluate(() => S.game.human === 1 && S.game.black === 'Carlos' && !S.game.result));
+  check('con negras la máquina empieza', await waitFor(p, () => S.game.moves.length === 1));
+  check('y el tablero se ve desde las negras', await p.evaluate(() => orientOf(S.game) === 1));
+  check('sin errores en la página', !errors.length, errors.join(' | '));
+  await ctx.close();
+}
+
+console.log('Dos jugadores, coronación, reloj y tablas');
+{
+  const { p, ctx, errors } = await fresh();
+  await p.click('[data-mode="local"]');
+  await p.fill('#lWhite', 'Ana'); await p.fill('#lBlack', 'Luis');
+  await p.check('#lFlip');
+  await p.click('[data-lclock="5+0"]');
+  await p.click('#start');
+  check('partida de dos jugadores con reloj', await p.evaluate(() => S.game.mode === 'local' && S.game.white === 'Ana' && S.game.clock.base === 300000 && S.game.flip));
+  await move(p, 'f2f3');
+  check('el tablero gira en cada turno', await p.evaluate(() => orientOf(S.game) === 1));
+  check('el reloj de las negras corre', await p.evaluate(() => !!S.game.tick && document.querySelector('[data-clock="1"]').classList.contains('run')));
+  await move(p, 'e7e5'); await move(p, 'g2g4'); await move(p, 'd8h4');
+  check('mate del loco: ganan las negras', await p.evaluate(() => S.game.result === '0-1' && S.game.reason === 'mate'));
+  check('el texto lo dice', (await p.textContent('.gstatus')).includes('Luis'));
+  check('Elo de los dos jugadores', await p.evaluate(() => { const t = eloTable(); const a = t.find(x => x.name === 'Ana'), l = t.find(x => x.name === 'Luis'); return a.elo < 1200 && l.elo > 1200 && Math.round(a.elo + l.elo) === 2400; }));
+  // coronación desde una posición preparada
+  await p.evaluate(() => { S.game = null; render(); });
+  await p.evaluate(() => { startGame({ mode: 'local', white: 'Ana', black: 'Luis', clock: null, flip: false }); S.game.moves = ['a2a4', 'b7b5', 'a4b5', 'g8f6', 'b5b6', 'f6g8', 'b6a7', 'g8f6']; render(); });
+  await move(p, 'a7b8');
+  check('al coronar se elige la pieza', await p.evaluate(() => !!document.querySelector('[data-pr="2"]')));
+  await p.click('[data-pr="2"]');
+  check('corona en caballo', await p.evaluate(() => S.game.moves[S.game.moves.length - 1] === 'a7b8n'));
+  await p.click('#gDraw'); await p.click('#cOk');
+  check('tablas de mutuo acuerdo', await p.evaluate(() => S.game.result === '1/2-1/2' && S.game.reason === 'acuerdo'));
+  // caída de bandera
+  await p.evaluate(() => { startGame({ mode: 'local', white: 'Ana', black: 'Luis', clock: { base: 60000, inc: 0 }, flip: false }); S.game.moves = ['e2e4']; S.game.times = [60000, 400]; S.game.tick = Date.now(); render(); });
+  check('si se acaba el tiempo, pierde', await waitFor(p, () => S.game.result === '1-0' && S.game.reason === 'tiempo', null, 4000));
+  await p.evaluate(() => { startGame({ mode: 'local', white: 'Ana', black: 'Luis', clock: { base: 60000, inc: 0 }, flip: false }); S.game.startFen = '4k3/8/8/8/8/8/8/R3K3 b - - 0 1'; S.game.moves = []; S.game.times = [500, 60000]; render(); });
+  await move(p, 'e8d7');
+  check('el incremento y el turno pasan al otro reloj', await p.evaluate(() => S.game.tick && turnOf(S.game) === 0));
+  await p.evaluate(() => { S.game.times[0] = 300; S.game.tick = Date.now(); });
+  check('sin tiempo pero el rival no puede dar mate: tablas', await waitFor(p, () => S.game.result === '1/2-1/2' && S.game.reason === 'tiempo', null, 4000));
+  check('el reloj se para al salir de la app', await p.evaluate(() => { startGame({ mode: 'local', white: 'A', black: 'B', clock: { base: 60000, inc: 0 } }); S.game.moves = ['e2e4']; S.game.tick = Date.now() - 5000; pauseClock(); const ok = !S.game.tick && S.game.paused && S.game.times[1] <= 55100; resumeClock(); return ok && !!S.game.tick; }));
+  check('sin errores en la página', !errors.length, errors.join(' | '));
+  await ctx.close();
+}
+
+console.log('Modo aprendizaje y pistas');
+{
+  const { p, ctx, errors } = await fresh();
+  await p.click('[data-alevel="3"]'); await p.check('#aLearn'); await p.click('#start');
+  await p.evaluate(() => { S.game.moves = ['e2e4', 'e7e5', 'g1f3', 'd7d6']; render(); });
+  await p.click('#gHint');
+  check('la pista marca una jugada', await waitFor(p, () => HINT && HINT.length === 2));
+  await move(p, 'd2d4');      // jugada buena: no avisa y la máquina responde
+  check('una jugada buena no da aviso', await waitFor(p, () => S.game.moves.length === 6, null, 20000) && !(await p.$('#lnUndo')));
+  await p.evaluate(() => { HINT = null; THINK = null; LEARN_WAIT = null; Engine.reset(); S.game.moves = ['e2e4', 'e7e5', 'd2d4', 'd7d6']; render(); });
+  await move(p, 'd1g4');      // la dama queda a tiro del alfil de c8
+  const warned = await waitFor(p, () => !!document.querySelector('#lnUndo'), null, 20000);
+  check('avisa al regalar la dama', warned);
+  if (warned) { await p.click('#lnUndo'); check('y se puede deshacer', await p.evaluate(() => S.game.moves.length === 4 && !LEARN_WAIT)); }
+  check('sin errores en la página', !errors.length, errors.join(' | '));
+  await ctx.close();
+}
+
+console.log('Revisión y análisis');
+{
+  const { p, ctx, errors } = await fresh();
+  await p.evaluate(() => {
+    startGame({ mode: 'local', white: 'Ana', black: 'Luis', clock: null });
+    S.game.moves = ['e2e4', 'e7e5', 'd1h5', 'b8c6', 'f1c4', 'g8f6', 'h5f7']; render();
+  });
+  check('mate del pastor', await p.evaluate(() => S.game.result === '1-0' && S.game.reason === 'mate') || await p.evaluate(() => { const R = gstate(S.game); if (R.st.over) endGame(R.st.result, R.st.reason); return S.game.result === '1-0'; }));
+  await p.click('#gAnalyse');
+  check('el análisis termina', await waitFor(p, () => REVIEW && REVIEW.g.analysis && !REVIEW.analysing, null, 30000));
+  check('marca 3… Cf6?? como error grave', await p.evaluate(() => { const a = annotate(REVIEW.g); return a[5].cls === 'grave'; }));
+  check('el análisis queda guardado en el historial', await p.evaluate(() => !!S.archive[0].analysis && S.archive[0].analysis.evals.length === 8));
+  await p.click('[data-rp="6"]');
+  check('nota con la mejor jugada', (await p.textContent('.note')).includes('Mejor era'));
+  await p.click('#rvBest');
+  check('se puede ver la mejor jugada en el tablero', await p.evaluate(() => document.querySelectorAll('.sq.best').length === 2));
+  await p.click('[data-nav="first"]');
+  check('navegar al inicio', await p.evaluate(() => REVIEW.ply === 0));
+  await p.click('[data-nav="next"]'); await p.click('[data-nav="next"]');
+  check('avanzar jugada a jugada', await p.evaluate(() => REVIEW.ply === 2));
+  await p.click('#rvBack');
+  check('volver a la partida', await p.evaluate(() => !REVIEW && !!S.game));
+  check('sin errores en la página', !errors.length, errors.join(' | '));
+  await ctx.close();
+}
+
+console.log('Problemas');
+{
+  const { p, ctx, errors } = await fresh();
+  await p.click('[data-mode="puzzles"]');
+  const z1 = PROBLEMAS.find(x => x.n === 1), z2 = PROBLEMAS.find(x => x.n === 2);
+  await p.click(`[data-pz="${z1.id}"]`);
+  await move(p, z1.sol[0]);
+  check('mate en 1 resuelto a la primera', await waitFor(p, id => S.pz.done && S.solved[id] === 2, z1.id));
+  await p.evaluate(id => openPuzzle(id), z2.id);
+  // una jugada que no da mate
+  const wrong = await p.evaluate(z => { const pos = new Ajedrez.Position(z.fen); return pos.legal().map(m => pos.uci(m)).find(u => u !== z.sol[0]); }, z2);
+  await move(p, wrong);
+  check('una jugada equivocada se rechaza y se deshace', await waitFor(p, () => S.pz.fails === 1 && S.pz.moves.length === 0, null, 20000));
+  await move(p, z2.sol[0]);
+  check('la defensa responde', await waitFor(p, () => S.pz.moves.length === 2, null, 20000));
+  const last = await p.evaluate(() => { const z = pzById(S.pz.id); const pos = Ajedrez.replay(S.pz.moves, z.fen).pos; return pos.legal().map(m => pos.uci(m)).find(u => { const q = pos.clone(); q.make(q.fromUci(u)); return Ajedrez.status(q).reason === 'mate'; }); });
+  await move(p, last);
+  check('mate en 2 resuelto (con un fallo)', await waitFor(p, id => S.pz.done && S.solved[id] === 1, z2.id));
+  await p.click('#pzBack');
+  check('la lista marca los resueltos', await p.evaluate(() => document.querySelectorAll('.pzgrid .ok1').length === 1 && document.querySelectorAll('.pzgrid .ok').length === 1));
+  const z3 = PROBLEMAS.find(x => x.n === 3);
+  await p.evaluate(id => openPuzzle(id), z3.id);
+  await p.click('#pzSol');
+  check('ver la solución la reproduce entera y no cuenta como resuelto', await waitFor(p, id => S.pz.done && S.pz.moves.length === 5 && !S.solved[id], z3.id, 10000));
+  check('sin errores en la página', !errors.length, errors.join(' | '));
+  await ctx.close();
+}
+
+console.log('PGN, copias y datos maliciosos');
+{
+  const { p, ctx, errors } = await fresh();
+  const pgn = '[Event "Torneo"]\n[White "Kasparov"]\n[Black "Topalov"]\n[Date "1999.01.20"]\n[Result "1-0"]\n\n1. e4 d6 2. d4 Nf6 3. Nc3 g6 {comentario} 4. Be3 Bg7 5. Qd2 c6 1-0\n';
+  await p.evaluate(t => importPgnText(t), pgn); await p.click('#cOk');
+  check('importa el PGN al historial', await p.evaluate(() => S.archive.length === 1 && S.archive[0].src === 'pgn' && S.archive[0].moves.length === 10 && S.archive[0].white === 'Kasparov'));
+  check('las partidas importadas no cuentan para el Elo', await p.evaluate(() => eloTable().length === 0));
+  await p.evaluate(t => importPgnText(t), pgn); await p.click('#cOk');
+  check('importar dos veces no duplica', await p.evaluate(() => S.archive.length === 1));
+  check('exportar PGN', await p.evaluate(() => toPgn(S.archive[0]).includes('[White "Kasparov"]') && toPgn(S.archive[0]).includes('5. Qd2 c6 1-0')));
+  const res = await p.evaluate(() => {
+    const evil = { app: 'ajedrez', archive: [
+      { id: '<img src=x onerror=alert(1)>', mode: 'local', white: '<b>Ana</b>', black: 'Luis"', moves: ['e2e4', 'zz', 'e7e5'], result: '1-0', created: 'x' },
+      { id: 'ok1', mode: 'ai', human: 7, level: 99, white: 'Pepe', black: '🤖', moves: ['e2e4', 'e7e5', 'g1f3'], result: 'hack', analysis: { evals: [[1, 2]] } },
+      { id: 'bad', moves: 'no' }, null, 42 ], roster: ['<script>', 'Pepe'], solved: { 'm1-01': 9, '<x>': 1 } };
+    const n = mergeBackup(evil);
+    const a = S.archive.find(x => x.id === 'ok1'), b = S.archive.find(x => x.white.includes('Ana'));
+    return { n, safeId: b && /^[A-Za-z0-9_-]+$/.test(b.id), name: b && b.white, mv: b && b.moves.join(), lvl: a && a.level, human: a && a.human, res: a && a.result, an: a && a.analysis, solved: S.solved['m1-01'], badKey: S.solved['<x>'], roster: S.roster };
+  });
+  check('copias: solo entra lo válido', res.n === 2 && res.safeId && res.name === 'bAna/b' && res.mv === 'e2e4', JSON.stringify(res));
+  check('copias: valores fuera de rango se corrigen', res.lvl === 6 && res.human === 0 && res.res === null && !res.an && res.solved === 2 && res.badKey === undefined, JSON.stringify(res));
+  check('copias: nombres limpios en la lista de jugadores', !res.roster.some(n => /[<>]/.test(n)), res.roster.join());
+  const round = await p.evaluate(() => { const before = S.archive.length; const j = JSON.parse(backupJSON()); S.archive = []; const n = mergeBackup(j); return before === n && S.archive.length === before; });
+  check('copia de seguridad: ida y vuelta', round);
+  await p.evaluate(() => openArchive('partidas'));
+  check('la lista de partidas se abre', await p.evaluate(() => document.querySelectorAll('#modal [data-arch]').length === 3));
+  await p.click('#modal [data-arch="0"]');
+  check('y desde ella se revisa una partida', await p.evaluate(() => !!REVIEW));
+  check('sin errores en la página', !errors.length, errors.join(' | '));
+  await ctx.close();
+}
+
+console.log('Clasificación, menú, temas y borrar');
+{
+  const mk = (i, w, b, result, extra) => Object.assign({ id: 'g' + i, created: 1e12 + i * 1e6, finished: 1e12 + i * 1e6 + 5, mode: 'local', white: w, black: b, moves: ['e2e4', 'e7e5', 'g1f3'], result, reason: 'abandono' }, extra || {});
+  const archive = [mk(1, 'Ana', 'Luis', '1-0'), mk(2, 'Luis', 'Ana', '0-1'), mk(3, 'Ana', 'Pepe', '1/2-1/2'), mk(4, 'Pepe', '🤖', '1-0', { mode: 'ai', human: 0, level: 4 }), mk(5, 'Blancas', 'Negras', '1-0')].reverse();
+  const { p, ctx, errors } = await fresh({ onboarded: true, archive, roster: ['Ana', 'Luis', 'Pepe'] });
+  const t = await p.evaluate(() => eloTable().map(o => [o.name, Math.round(o.elo), o.pj]));
+  const elo = n => (t.find(x => x[0] === n) || [])[1];
+  check('Elo: Ana por encima de Luis, sin los nombres por defecto', elo('Ana') > elo('Luis') && t.length === 3 && !t.some(x => x[0] === 'Blancas'), JSON.stringify(t));
+  check('ganar a la máquina de nivel 4 sube mucho', t.find(x => x[0] === 'Pepe')[1] > 1220, JSON.stringify(t));
+  await p.click('#menuBtn'); await p.click('#mArch');
+  check('la clasificación se ve', await p.evaluate(() => document.querySelectorAll('#modal tbody tr').length === 3));
+  await p.click('#modal [data-player="Ana"]');
+  check('ficha del jugador', (await p.textContent('#modal')).includes('Cara a cara'));
+  await p.click('#pfBack'); await p.click('[data-tab="records"]');
+  check('récords', (await p.textContent('#modal')).includes('Nivel más alto vencido'));
+  await p.click('#aC');
+  await p.click('#menuBtn'); await p.click('#mTheme');
+  await p.click('[data-theme="claro"]'); await p.click('[data-board="verde"]');
+  check('cambiar tema y tablero', await p.evaluate(() => S.theme === 'claro' && S.board === 'verde' && getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() === '#f1eee6'));
+  await p.click('#thOk');
+  await p.click('#menuBtn'); await p.click('#mRoster');
+  await p.fill('[data-orig="Luis"]', 'Ana'); await p.click('#roS'); await p.click('#cOk');
+  check('unir jugadores en la lista', await p.evaluate(() => !S.roster.includes('Luis') && S.archive.every(a => a.white !== 'Luis' && a.black !== 'Luis')));
+  await p.click('#menuBtn'); await p.click('#mWipe'); await p.click('#wHist'); await p.click('#cOk');
+  check('borrar historial', await p.evaluate(() => S.archive.length === 0 && S.roster.length === 2));
+  await p.click('#menuBtn'); await p.click('#mHelp');
+  check('la ayuda se abre', await p.evaluate(() => !!document.querySelector('#wbNext')));
+  check('sin errores en la página', !errors.length, errors.join(' | '));
+  await ctx.close();
+}
+
+console.log('Pantallas: vertical, horizontal y tablet');
+{
+  for (const [name, vp] of [['móvil vertical', { width: 360, height: 740 }], ['móvil horizontal', { width: 800, height: 380 }], ['tablet 10"', { width: 1280, height: 800 }], ['tablet 7" vertical', { width: 600, height: 960 }]]) {
+    const { p, ctx, errors } = await fresh({ onboarded: true }, vp);
+    await p.evaluate(() => { startGame({ mode: 'local', white: 'Alejandro Fernández', black: 'María del Carmen', clock: { base: 300000, inc: 0 } }); S.game.moves = ['e2e4', 'd7d5', 'e4d5', 'd8d5']; render(); });
+    const m = await p.evaluate(() => { const b = document.querySelector('#board').getBoundingClientRect(); const acts = document.querySelector('.gacts').getBoundingClientRect();
+      const bars = [...document.querySelectorAll('.pbar')].filter(e => e.offsetParent).map(e => e.getBoundingClientRect().bottom);
+      return { bw: b.width, bh: b.height, bottom: Math.max(b.bottom, ...bars), bars: bars.length, ih: innerHeight, iw: innerWidth, sw: document.documentElement.scrollWidth, actsBottom: acts.bottom }; });
+    check(`${name}: el tablero es cuadrado y cabe entero, con los dos jugadores`, Math.abs(m.bw - m.bh) < 2 && m.bottom <= m.ih + 1 && m.bw >= 280 && m.bars === 2, JSON.stringify(m));
+    check(`${name}: sin desplazamiento horizontal`, m.sw <= m.iw + 1, JSON.stringify(m));
+    check(`${name}: los botones se ven sin desplazar`, m.actsBottom <= m.ih + 1, JSON.stringify(m));
+    check(`${name}: sin errores`, !errors.length, errors.join(' | '));
+    await ctx.close();
+  }
+}
+
+await browser.close();
+server.close();
+console.log(`\n${passed} correctas, ${failed} fallidas`);
+process.exit(failed ? 1 : 0);
