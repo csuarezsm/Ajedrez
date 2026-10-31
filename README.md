@@ -2,7 +2,7 @@
 
 Ajedrez para Android: contra la máquina, dos jugadores en el mismo móvil y problemas de mate.
 App Capacitor + web (`www/`). No usa servidor: todos los datos se guardan en el móvil.
-Paquete: `com.itcanarias.ajedrez` · versión 1.0.2
+Paquete: `com.itcanarias.ajedrez` · versión 1.0.3
 
 © 2026 IT Canarias. Todos los derechos reservados.
 
@@ -13,7 +13,10 @@ Paquete: `com.itcanarias.ajedrez` · versión 1.0.2
 - **Dos jugadores** en el mismo móvil, con opción de girar el tablero en cada turno.
 - **Reloj** opcional: 3+2, 5+0, 10+5, 15+10 o personalizado. Se para si sales de la app. Si se acaba el tiempo y el rival no puede dar mate, son tablas.
 - **Análisis**: al terminar, el motor evalúa cada posición y marca ★ mejor, ?! imprecisión (≥ 0,6), ? error (≥ 1,3) y ?? error grave (≥ 3 peones). Enseña la mejor jugada en el tablero, la barra de evaluación y la precisión de cada jugador.
-- **Problemas**: 66 problemas de mate (24 en 1, 24 en 2 y 18 en 3). La máquina defiende lo mejor posible; se acepta cualquier jugada que mantenga el mate. Pistas y solución.
+- **Problemas**: 170 problemas de mate (50 en 1, 70 en 2 y 50 en 3), ordenados de fácil a difícil. La máquina defiende lo mejor posible; se acepta cualquier jugada que mantenga el mate. Pistas y solución.
+- **Problema del día** (el mismo para todos ese día) y **Elo de problemas**: cada problema tiene una dificultad aproximada y solo cuenta el primer intento. «Siguiente a tu nivel» elige el más cercano a tu Elo.
+- **Editor de posiciones**: poner y quitar piezas, turno y enroques, copiar o pegar FEN, analizar la posición y jugar desde ella. Se abre desde el menú o desde el análisis («✏️ Editar»).
+- **Jugar en línea** (oculto hasta que el servidor esté instalado): salas con código, partida validada por el servidor, reloj en el servidor, reconexión, tablas, revancha. Cuenta para el Elo. Se activa poniendo la dirección del servidor en `ONLINE_URL` (`www/juego.js`).
 - **Repasa tus errores**: con los errores (?) y errores graves (??) de las partidas analizadas se forman ejercicios: la posición antes del error y hay que encontrar algo mejor. Se acepta la jugada del motor o cualquier otra que no pierda más de 0,7 peones respecto a ella. Contra la máquina solo salen tus errores; en partidas de dos jugadores, los de los dos. Botón para analizar de golpe hasta 5 partidas sin analizar.
 - **Jugar desde aquí**: desde cualquier jugada del análisis, desde un problema o desde un error repasado se empieza una partida nueva desde esa posición, contra la máquina o a dos jugadores. Estas partidas no cuentan para el Elo.
 - **Clasificación**: Elo (inicial 1200, K = 40 las 10 primeras partidas y después 24). La máquina tiene un Elo fijo por nivel. Ficha de jugador, récords e historial con revisión jugada a jugada.
@@ -42,20 +45,20 @@ Paquete: `com.itcanarias.ajedrez` · versión 1.0.2
 
 | Nivel | Cómo juega | Elo para la clasificación |
 |---|---|---|
-| 1 Principiante | 1 jugada + capturas, mucho azar y algún error a propósito | 700 |
-| 2 Aficionado | 2 jugadas, bastante azar | 1000 |
-| 3 Intermedio | 3 jugadas, algo de azar | 1300 |
-| 4 Avanzado | 0,5 s por jugada (máx. 6 de profundidad) | 1550 |
-| 5 Experto | 1,2 s por jugada | 1750 |
-| 6 Club | 2,5 s por jugada | 1950 |
+| 1 Principiante | 1 jugada + capturas, mucho azar y algún error a propósito | 600 |
+| 2 Aficionado | 2 jugadas, mucho azar | 800 |
+| 3 Intermedio | 2 jugadas, algo de azar | 950 |
+| 4 Avanzado | 3 jugadas, algo de azar | 1150 |
+| 5 Experto | 0,35 s por jugada | 1450 |
+| 6 Club | 2,5 s por jugada | 1650 |
 
-Los Elo de la máquina son aproximados, para comparar jugadores entre sí. Con reloj, la máquina no gasta más de 1/40 de su tiempo restante por jugada.
+Calibrados en la 1.0.3 con `tools/calibrar-niveles.js` (partidas entre niveles vecinos, con los nodos que calcularía un móvil de gama media): cada nivel saca al anterior un 85 % (1→2, 2→3, 3→4), un 93-95 % (4→5) y un 88 % (5→6) de los puntos. Las diferencias medidas se comprimen ×0,6 para pasarlas a Elo de personas y el nivel 1 se fija en 600: la escala relativa está medida; el punto de partida es una estimación. Con reloj, la máquina no gasta más de 1/40 de su tiempo restante por jugada.
 
 ### Preparado para el juego en línea
 
 - La partida se guarda como `moves` (UCI) + `startFen`; `Ajedrez.replay()` reconstruye todo. El servidor común podrá usar `ajedrez.js` tal cual para validar las jugadas.
 - El reloj guarda `times` y `tick`, igual que lo hará el servidor.
-- Falta: botón «Jugar en línea», salas con código y el módulo de Ajedrez en el servidor (ver el documento de arranque).
+- El servidor común está en el repo `csuarezsm/juegos-servidor`. `tests/servidor/` es una copia para probar la app contra él en `npm test`.
 
 ## Publicar una versión
 
@@ -81,7 +84,8 @@ Los Elo de la máquina son aproximados, para comparar jugadores entre sí. Con r
 - enroque, captura al paso, coronación, notación, FEN, mate, ahogado, triple repetición, 50 movimientos y material insuficiente;
 - 300 partidas al azar: todas terminan, la clave de posición siempre cuadra y todas pasan por PGN sin cambios;
 - el motor (mates, piezas regaladas, simetría, libro, análisis) y que el nivel 3 gana al 1 y el 5 al 3;
-- que los 66 problemas tienen una solución legal, terminan en mate y no tienen un mate más corto;
+- que los 170 problemas tienen una solución legal, terminan en mate y no tienen un mate más corto;
+- el juego en línea: dos móviles simulados juegan una partida completa contra el servidor (crear sala, unirse, turnos, reconexión, mate, Elo, revancha y tablas);
 - la interfaz: partida contra la máquina, dos jugadores, coronación, reloj, tablas, modo aprendizaje, análisis, problemas, PGN, copias con datos maliciosos, clasificación, temas, y que el tablero cabe en móvil vertical, horizontal y tablet.
 
 ## Desarrollo local
@@ -92,7 +96,8 @@ npm test                  # pruebas (Playwright 1.63 + Chromium)
 npx cap sync android
 npx cap open android      # Android Studio
 npm run icons             # iconos y splash a partir de assets/
-node tools/generar-problemas.js   # vuelve a generar los problemas (tarda unos minutos)
+node tools/buscar-candidatos.js 1 cand.json 30   # busca candidatos a problemas durante 30 min
+node tools/elegir-problemas.js cand.json        # elige los mejores y los añade a www/problemas.js
 ```
 
 ## Google Play

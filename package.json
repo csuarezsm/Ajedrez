@@ -1,6 +1,6 @@
 {
   "name": "ajedrez",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "author": "IT Canarias",
   "license": "UNLICENSED",
@@ -21,6 +21,7 @@
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^7.0.0",
-    "playwright": "^1.63.0"
+    "playwright": "^1.63.0",
+    "ws": "^8.22.1"
   }
 }

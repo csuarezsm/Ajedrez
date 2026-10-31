@@ -376,12 +376,14 @@ function rootScores(pos, depth, opts) {
 /* ---------- Niveles ---------- */
 const LEVELS = [
   null,
-  { name: 'Principiante', elo: 700,  depth: 1, noise: 260, blunder: 0.12, book: 4 },
-  { name: 'Aficionado',   elo: 1000, depth: 2, noise: 110, blunder: 0.04, book: 6 },
-  { name: 'Intermedio',   elo: 1300, depth: 3, noise: 45,  blunder: 0,    book: 10 },
-  { name: 'Avanzado',     elo: 1550, time: 500, depth: 6, noise: 8, book: 14 },
-  { name: 'Experto',      elo: 1750, time: 1200, book: 18 },
-  { name: 'Club',         elo: 1950, time: 2500, book: 24 },
+  // Calibrados con partidas entre niveles vecinos (tools/calibrar-niveles.js): cada nivel saca entre
+  // un 85 % y un 95 % de los puntos al anterior. El Elo es una estimación para la clasificación.
+  { name: 'Principiante', elo: 600,  depth: 1, noise: 150, blunder: 0.07, book: 4 },
+  { name: 'Aficionado',   elo: 800,  depth: 2, noise: 170, blunder: 0.06, book: 6 },
+  { name: 'Intermedio',   elo: 950,  depth: 2, noise: 95,  blunder: 0.03, book: 8 },
+  { name: 'Avanzado',     elo: 1150, depth: 3, noise: 70,  blunder: 0.02, book: 12 },
+  { name: 'Experto',      elo: 1450, time: 350, depth: 6, noise: 15, book: 16 },
+  { name: 'Club',         elo: 1650, time: 2500, book: 24 },
 ];
 
 // Jugada de la máquina para un nivel. moves = jugadas desde el inicio (para el libro), rnd opcional (pruebas)

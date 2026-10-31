@@ -3,7 +3,7 @@
 'use strict';
 const CH = window.Ajedrez, MO = window.Motor;
 const LEVELS = MO.LEVELS;
-const LEVEL_DESC = ['', 'Para aprender a mover. Se equivoca a menudo.', 'Ve las capturas sencillas.', 'Juega con algo de cabeza.', 'Calcula varias jugadas.', 'Hay que estar muy atento.', 'Como un jugador de club aficionado.'];
+const LEVEL_DESC = ['', 'Para aprender a mover. Se equivoca a menudo.', 'Ve las capturas sencillas, pero se despista.', 'Juega con algo de cabeza.', 'Calcula tres jugadas, con algún despiste.', 'Piensa rápido y casi no regala nada.', 'Como un jugador de club aficionado.'];
 const CLOCKS = [['', 'Sin reloj'], ['3+2', '3+2'], ['5+0', '5+0'], ['10+5', '10+5'], ['15+10', '15+10'], ['custom', 'Otro']];
 const BOARDS = {
   madera: { name: 'Madera', l: '#ecd7b0', d: '#b08559' },
@@ -17,6 +17,8 @@ const isPlaceholder = n => PLACEHOLDER.test(String(n || '').trim());
 const PNAME = { 1: 'peón', 2: 'caballo', 3: 'alfil', 4: 'torre', 5: 'dama', 6: 'rey' };
 const RESULT_TXT = { '1-0': 'Ganan las blancas', '0-1': 'Ganan las negras', '1/2-1/2': 'Tablas' };
 const COLOR_TXT = ['blancas', 'negras'];
+// Servidor de juegos en línea (vacío = la opción «En línea» no aparece)
+const ONLINE_URL = window.AJEDREZ_ONLINE_URL || '';
 
 /* ================= Sonidos (sintetizados: sin archivos de audio) ================= */
 const Sound = (() => {
@@ -149,7 +151,7 @@ function clockLoop() {
     if (!g || !g.clock || g.result || REVIEW || S.pz) return;
     for (const c of [0, 1]) document.querySelectorAll(`[data-clock="${c}"]`).forEach(el => { const r = remaining(g, c); el.textContent = fmtClock(r); el.classList.toggle('low', r < 20000); el.classList.toggle('run', !!g.tick && turnOf(g) === c); });
     const c = turnOf(g);
-    if (g.tick && remaining(g, c) <= 0) {
+    if (g.tick && remaining(g, c) <= 0 && g.mode !== 'online') {
       g.times[c] = 0;
       const pos = gstate(g).pos;
       endGame(pos.canMate(1 - c) ? (c === 0 ? '0-1' : '1-0') : '1/2-1/2', 'tiempo');
@@ -272,7 +274,8 @@ function captured(pos) {
 /* ================= Pantalla de inicio ================= */
 function modeTabs() {
   const m = S.draft.mode;
-  return `<div class="kinds modes">${[['ai', '🤖 Contra la máquina'], ['local', '👥 Dos jugadores'], ['puzzles', '🧩 Problemas']].map(([k, l]) => `<button data-mode="${k}" class="${m === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  const modes = [['ai', '🤖 Contra la máquina'], ['local', '👥 Dos jugadores']].concat(ONLINE_URL ? [['online', '🌐 En línea']] : [], [['puzzles', '🧩 Problemas']]);
+  return `<div class="kinds modes">${modes.map(([k, l]) => `<button data-mode="${k}" class="${m === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
 }
 function clockFields(c, prefix) {
   return `<div class="chips">${CLOCKS.map(([k, l]) => `<button class="chipb ${(c.clock || '') === k ? 'on' : ''}" data-${prefix}clock="${k}">${l}</button>`).join('')}</div>
@@ -287,9 +290,11 @@ function rosterChips(cur, attr) {
 }
 function renderSetup() {
   const d = S.draft;
-  $('#subtitle').textContent = d.mode === 'puzzles' ? 'Problemas y repaso de errores' : d.mode === 'local' ? 'Dos jugadores' : 'Contra la máquina';
+  $('#subtitle').textContent = d.mode === 'online' ? 'Jugar en línea' : d.mode === 'puzzles' ? 'Problemas y repaso de errores' : d.mode === 'local' ? 'Dos jugadores' : 'Contra la máquina';
   let body = '';
+  if (d.mode === 'online' && !ONLINE_URL) d.mode = 'ai';
   if (d.mode === 'puzzles') body = puzzlesHtml();
+  else if (d.mode === 'online') body = onlineSetupHtml();
   else if (d.mode === 'local') {
     const L = d.local;
     body = `<div class="sec plist"><h2>Jugadores</h2>
@@ -314,14 +319,15 @@ function renderSetup() {
       <div class="sec"><h2>Ayuda</h2><label class="f"><span>Modo aprendizaje<em>Botón de pista y aviso cuando una jugada pierde material (puedes deshacerla o seguir)</em></span><input type="checkbox" class="tg" id="aLearn" ${A2.learn ? 'checked' : ''}></label></div>`;
   }
   $('#app').innerHTML = `${modeTabs()}${body}
-    ${d.mode !== 'puzzles' && S.archive.length ? `<div class="sec"><h2>Partidas anteriores</h2>${archiveHtml(3)}<button class="btn-ghost" id="allArch" style="width:100%;margin-top:4px">Ver clasificación y todas</button></div>` : ''}
+    ${d.mode !== 'puzzles' && d.mode !== 'online' && S.archive.length ? `<div class="sec"><h2>Partidas anteriores</h2>${archiveHtml(3)}<button class="btn-ghost" id="allArch" style="width:100%;margin-top:4px">Ver clasificación y todas</button></div>` : ''}
     <div class="copy">© 2026 IT Canarias. Todos los derechos reservados.</div>
-    ${d.mode !== 'puzzles' ? '<button class="btn-gold fab" id="start">Empezar partida</button>' : ''}`;
+    ${d.mode === 'ai' || d.mode === 'local' ? '<button class="btn-gold fab" id="start">Empezar partida</button>' : ''}`;
   document.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { syncDraft(); d.mode = b.dataset.mode; render(); window.scrollTo(0, 0); });
   document.querySelectorAll('[data-manage]').forEach(b => b.onclick = () => { syncDraft(); openRoster(); });
   document.querySelectorAll('[data-arch]').forEach(el => el.onclick = () => openGameReview(S.archive[+el.dataset.arch], 'home'));
   const allA = $('#allArch'); if (allA) allA.onclick = () => openArchive('ranking');
   if (d.mode === 'puzzles') return bindPuzzles();
+  if (d.mode === 'online') return bindOnlineSetup();
   const pre = d.mode === 'local' ? 'l' : 'a', cfg = d.mode === 'local' ? d.local : d.ai;
   document.querySelectorAll(`[data-${pre}clock]`).forEach(b => b.onclick = () => { syncDraft(); cfg.clock = b.dataset[pre + 'clock']; render(); });
   if (d.mode === 'local') {
@@ -390,7 +396,7 @@ let THINK = null;         // la máquina está pensando
 let HINT = null;          // casillas de la pista
 let LEARN_WAIT = null;    // modo aprendizaje: esperando a que decidas
 function orientOf(g) {
-  let o = g.mode === 'ai' ? g.human : (g.flip && !g.result ? turnOf(g) : 0);
+  let o = g.mode === 'ai' ? g.human : g.mode === 'online' ? g.seat : (g.flip && !g.result ? turnOf(g) : 0);
   if (g.rot) o = 1 - o;
   return o;
 }
@@ -421,13 +427,21 @@ function openingLine(g, ply) { const n = openingName(g, ply); return n ? `<div c
 function statusText(g, R) {
   if (g.result) {
     const why = CH.REASONS[g.reason] || '';
-    if (g.mode === 'ai') {
-      const won = (g.result === '1-0' && g.human === 0) || (g.result === '0-1' && g.human === 1);
+    if (g.mode === 'ai' || g.mode === 'online') {
+      const me = g.mode === 'ai' ? g.human : g.seat;
+      const won = (g.result === '1-0' && me === 0) || (g.result === '0-1' && me === 1);
+      if (g.mode === 'online') return (g.result === '1/2-1/2' ? '🤝 Tablas' : won ? '🏆 ¡Has ganado!' : '😔 Gana ' + sideName(g, 1 - me)) + (why ? ' · ' + why : '');
       return (g.result === '1/2-1/2' ? '🤝 Tablas' : won ? '🏆 ¡Has ganado!' : '😔 Gana la máquina') + (why ? ' · ' + why : '');
     }
     return (g.result === '1/2-1/2' ? '🤝 Tablas' : '🏆 Ganan ' + (g.result === '1-0' ? g.white : g.black)) + (why ? ' · ' + why : '');
   }
   const c = R.pos.turn;
+  if (g.mode === 'online') {
+    if (!g.ready) return '⏳ Esperando a tu rival…';
+    let t = c === g.seat ? 'Te toca' : 'Juega ' + sideName(g, c);
+    if (R.st.check) t = '♚ ¡Jaque! ' + t;
+    return t;
+  }
   if (THINK) return '🤖 La máquina está pensando…';
   if (LEARN_WAIT) return '🔎 Comprobando tu jugada…';
   let t = g.mode === 'ai' ? (c === g.human ? 'Te toca' : 'Juega la máquina') : 'Juegan ' + (c === 0 ? 'blancas' : 'negras') + ' · ' + sideName(g, c);
@@ -444,11 +458,11 @@ function renderGame() {
   const lastUci = viewing ? g.moves[VIEW_PLY - 1] : g.moves[g.moves.length - 1];
   const last = lastUci ? [CH.sqParse(lastUci.slice(0, 2)), CH.sqParse(lastUci.slice(2, 4))] : [];
   const st = viewing ? CH.status(pos) : R.st;
-  const myTurn = !g.result && !viewing && !THINK && !LEARN_WAIT && (g.mode === 'local' || pos.turn === g.human);
+  const myTurn = !g.result && !viewing && !THINK && !LEARN_WAIT && (g.mode === 'local' || (g.mode === 'ai' && pos.turn === g.human) || (g.mode === 'online' && pos.turn === g.seat && g.ready));
   const targets = BS.sel != null && myTurn ? pos.legal().filter(m => CH.mFrom(m) === BS.sel).map(m => CH.mTo(m)) : [];
   $('#subtitle').textContent = g.mode === 'ai' ? levelLabel(g.level).replace('🤖 ', '') + (g.clock ? ' · ' + clockLabel(g.clock) : '') : 'Dos jugadores' + (g.clock ? ' · ' + clockLabel(g.clock) : '');
   const top = 1 - orient, bottom = orient;
-  const acts = g.result
+  const acts = g.mode === 'online' ? onlineActs(g) : g.result
     ? `<button class="btn-gold" id="gAnalyse">🔍 Analizar</button><button id="gRematch">↻ Revancha</button><button id="gNew">✚ Nueva</button><button id="gShare">📤 Compartir</button>`
     : `<button id="gUndo" ${g.moves.length ? '' : 'disabled'}>↶ Deshacer</button><button id="gDraw" ${g.moves.length >= 2 ? '' : 'disabled'}>½ Tablas</button><button id="gResign">🏳 Rendirse</button><button id="gFlip" aria-label="Girar tablero">⇅</button>`;
   $('#app').innerHTML = `<div class="gm">
@@ -459,6 +473,7 @@ function renderGame() {
     </div>
     <div class="gs">
       <div class="sidebars">${playerBar(g, top, R.pos)}${playerBar(g, bottom, R.pos)}</div>
+      ${g.mode === 'online' ? onlineBanner(g) : ''}
       <div class="gstatus ${g.result ? 'end' : ''}"><span>${esc(statusText(g, R))}</span>${!g.result && g.mode === 'ai' && g.learn ? '<button id="gHint">💡 Pista</button>' : ''}</div>
       ${viewing ? `<button class="viewing" id="gLive">Viendo la jugada ${VIEW_PLY} · <u>Volver a la partida</u></button>` : ''}
       ${openingLine(g, viewing ? VIEW_PLY : g.moves.length)}
@@ -481,11 +496,13 @@ function renderGame() {
   on('gRematch', rematch);
   on('gNew', () => { S.game = null; REVIEW = null; render(); });
   on('gShare', () => sharePgn(g));
+  if (g.mode === 'online') bindOnlineGame(g);
   clockLoop();
   if (isMachineTurn(g) && !THINK && !LEARN_WAIT) machineMove();
 }
 function humanMove(uci) {
   const g = S.game; if (!g || g.result) return;
+  if (g.mode === 'online') return onlineMove(g, uci);
   const before = gstate(g).pos;
   HINT = null;
   const learn = g.mode === 'ai' && g.learn;
@@ -620,7 +637,7 @@ function resign() {
 function gamePgnData(g) {
   const d = new Date(g.created || Date.now());
   return { moves: g.moves, startFen: g.startFen, white: g.white, black: g.black, result: g.result || '*', created: g.created,
-    event: g.event || (g.mode === 'ai' ? 'Partida contra la máquina' : g.mode === 'local' ? 'Partida amistosa' : 'Partida'),
+    event: g.event || (g.mode === 'ai' ? 'Partida contra la máquina' : g.mode === 'local' ? 'Partida amistosa' : g.mode === 'online' ? 'Partida en línea' : 'Partida'),
     site: g.site, date: g.date, round: g.round,
     timeControl: g.clock ? (g.clock.base / 1000) + '+' + (g.clock.inc / 1000) : null,
     termination: g.reason ? (CH.REASONS[g.reason] || g.reason) : null };
@@ -821,7 +838,7 @@ function renderReview() {
       <div class="mlist">${list || '<span class="mut">Sin jugadas.</span>'}</div>
       <div class="gacts">
         ${!g.analysis && !RV.analysing && g.moves.length ? '<button class="btn-gold" id="rvAn">🔍 Analizar con el motor</button>' : ''}
-        ${!st.over ? '<button id="rvPlay">▶ Jugar desde aquí</button>' : ''}
+        ${!st.over ? '<button id="rvPlay">▶ Jugar desde aquí</button>' : ''}<button id="rvEdit">✏️ Editar</button>
         <button id="rvPgn">📤 PGN</button>
         ${!isCurrent ? '<button id="rvDel" class="btn-ghost">🗑 Borrar</button>' : ''}
         <button id="rvBack">‹ Volver</button>
@@ -842,6 +859,7 @@ function renderReview() {
   on('rvBest', () => { RV.showBest = !RV.showBest; renderReview(); });
   on('rvPgn', () => sharePgn(g));
   on('rvPlay', () => openContinue(bpos.fen(), bpos.turn));
+  on('rvEdit', () => { const f = bpos.fen(); REVIEW = null; openEditor(f, 'home'); });
   on('rvBack', closeReview);
   on('rvDel', () => confirmBox('Borrar partida', 'Se quitará del historial y de la clasificación.', 'Borrar', () => { S.archive = S.archive.filter(a => a.id !== g.id); save(); REVIEW = null; render(); openArchive('partidas'); }, true));
   // deslizar con el dedo sobre el tablero también avanza/retrocede
@@ -864,18 +882,39 @@ document.addEventListener('keydown', e => {
 /* ================= Problemas ================= */
 const PZ = window.PROBLEMAS || [];
 const pzById = id => PZ.find(p => p.id === id);
+// Problemas de mate en n, de más fácil a más difícil
+const pzList = n => PZ.filter(p => p.n === n).sort((a, b) => (a.r || 0) - (b.r || 0) || a.id.localeCompare(b.id));
+const PZ_ELO0 = 1000;
+// Problema del día: el mismo para todo el mundo ese día
+function dailyPuzzle(d) {
+  d = d || new Date(); const k = d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+  let h = 7; for (const ch of k) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return PZ.length ? PZ[h % PZ.length] : null;
+}
+// Elo de problemas: solo cuenta el primer intento de cada problema (acierto sin fallos = 1, si no = 0)
+function ratePuzzle(id, score) {
+  const P = pzById(id); if (!P) return;
+  S.pzRated = S.pzRated || {}; if (S.pzRated[id]) return;
+  const me = S.pzElo || PZ_ELO0, r = P.r || 1000;
+  const E = 1 / (1 + Math.pow(10, (r - me) / 400));
+  const n = Object.keys(S.pzRated).length, K = n < 15 ? 40 : 24;
+  S.pzElo = Math.round(me + K * (score - E));
+  S.pzRated[id] = 1;
+}
 function puzzlesHtml() {
   const solved = S.solved || {};
   const tot = PZ.filter(p => solved[p.id]).length;
-  const next = PZ.find(p => !solved[p.id]);
+  const next = PZ.slice().sort((a, b) => Math.abs((a.r || 1000) - (S.pzElo || PZ_ELO0)) - Math.abs((b.r || 1000) - (S.pzElo || PZ_ELO0))).find(p => !solved[p.id]);
+  const day = dailyPuzzle(), dayDone = day && solved[day.id];
   return drillSectionHtml() + `<div class="sec"><h2>Problemas de mate</h2>
-      <div class="mut" style="margin-bottom:10px">Encuentra el jaque mate. Juega el bando que tiene el turno y la máquina defiende lo mejor posible. Resueltos: <b>${tot} de ${PZ.length}</b>.</div>
+      <div class="mut" style="margin-bottom:10px">Encuentra el jaque mate. Juega el bando que tiene el turno y la máquina defiende lo mejor posible. Resueltos: <b>${tot} de ${PZ.length}</b>${S.pzRated && Object.keys(S.pzRated).length ? ` · tu Elo de problemas: <b style="color:var(--gold)">${S.pzElo || PZ_ELO0}</b>` : ''}.</div>
       <div class="pzbar"><i style="width:${PZ.length ? Math.round(tot / PZ.length * 100) : 0}%"></i></div>
-      ${next ? `<button class="btn-gold" data-pz="${next.id}" style="width:100%;margin-top:12px">▶ Siguiente sin resolver</button>` : '<div class="empty">🏆 ¡Los has resuelto todos!</div>'}
+      ${day ? `<button class="daily ${dayDone ? 'done' : ''}" data-pz="${day.id}"><span>📅</span><b>Problema del día<small>Mate en ${day.n} · dificultad ≈${day.r || '?'}</small></b><em>${dayDone ? '✓' : '›'}</em></button>` : ''}
+      ${next ? `<button class="btn-gold" data-pz="${next.id}" style="width:100%;margin-top:10px">▶ Siguiente a tu nivel</button>` : '<div class="empty">🏆 ¡Los has resuelto todos!</div>'}
     </div>
-    ${[1, 2, 3].map(n => { const list = PZ.filter(p => p.n === n); const done = list.filter(p => solved[p.id]).length; return list.length ? `<div class="sec"><h2>Mate en ${n} <small class="mut" style="text-transform:none;letter-spacing:0">· ${done}/${list.length}</small></h2>
+    ${[1, 2, 3].map(n => { const list = pzList(n); const done = list.filter(p => solved[p.id]).length; return list.length ? `<div class="sec"><h2>Mate en ${n} <small class="mut" style="text-transform:none;letter-spacing:0">· ${done}/${list.length} · de fácil a difícil</small></h2>
       <div class="pzgrid">${list.map((p, i) => `<button data-pz="${p.id}" class="${solved[p.id] === 2 ? 'ok1' : solved[p.id] ? 'ok' : ''}">${i + 1}</button>`).join('')}</div></div>` : ''; }).join('')}
-    <div class="mut" style="padding:0 4px 10px">Dorado = resuelto a la primera · borde = resuelto con algún fallo o viendo la solución.</div>`;
+    <div class="mut" style="padding:0 4px 10px">Dorado = resuelto a la primera · borde = resuelto con algún fallo o viendo la solución. El Elo de problemas solo cuenta el primer intento de cada uno.</div>`;
 }
 function bindPuzzles() {
   document.querySelectorAll('[data-pz]').forEach(b => b.onclick = () => openPuzzle(b.dataset.pz));
@@ -896,11 +935,11 @@ function renderPuzzle() {
   const last = z.moves.length ? [CH.sqParse(z.moves[z.moves.length - 1].slice(0, 2)), CH.sqParse(z.moves[z.moves.length - 1].slice(2, 4))] : [];
   const myTurn = !z.done && !PZ_BUSY && pos.turn === attacker;
   const targets = BS.sel != null && myTurn ? pos.legal().filter(m => CH.mFrom(m) === BS.sel).map(m => CH.mTo(m)) : [];
-  const list = PZ.filter(p => p.n === P.n), idx = list.indexOf(P) + 1;
+  const list = pzList(P.n), idx = list.indexOf(P) + 1;
   const left = P.n - Math.floor(z.moves.length / 2);
-  $('#subtitle').textContent = 'Mate en ' + P.n + ' · problema ' + idx + ' de ' + list.length;
+  $('#subtitle').textContent = (P === dailyPuzzle() ? '📅 Problema del día · ' : '') + 'Mate en ' + P.n + ' · problema ' + idx + ' de ' + list.length;
   const msg = z.done ? (z.seen ? '👀 Esta era la solución.' : z.fails ? '✅ ¡Mate! Resuelto.' : '🏆 ¡Mate a la primera!') : PZ_MSG || (myTurn ? `Juegan las ${COLOR_TXT[attacker]}: mate en ${left}` : 'Responde la defensa…');
-  const nextP = PZ.find(p => !(S.solved || {})[p.id] && p.id !== P.id) || PZ[(PZ.indexOf(P) + 1) % PZ.length];
+  const nextP = PZ.filter(p => !(S.solved || {})[p.id] && p.id !== P.id).sort((a, b) => Math.abs((a.r || 1000) - (S.pzElo || PZ_ELO0)) - Math.abs((b.r || 1000) - (S.pzElo || PZ_ELO0)))[0] || PZ[(PZ.indexOf(P) + 1) % PZ.length];
   $('#app').innerHTML = `<div class="gm">
     <div class="gb">
       <div class="pzhead"><span class="pk">${Piezas.piece(6, attacker)}</span><div><b>Juegan las ${COLOR_TXT[attacker]}</b><span class="mut">Da mate en ${P.n} jugada${P.n === 1 ? '' : 's'}</span></div></div>
@@ -945,11 +984,11 @@ async function puzzleMove(uci) {
   }
   if (S.pz !== z) return;
   if (!ok) {
-    z.fails++; PZ_MSG = '❌ Así no hay mate. Prueba otra vez.'; vibrate(60); Sound.play('bad'); save(); render();
+    z.fails++; ratePuzzle(z.id, 0); PZ_MSG = '❌ Así no hay mate. Prueba otra vez.'; vibrate(60); Sound.play('bad'); save(); render();
     setTimeout(() => { if (S.pz === z && z.moves.length === k + 1) { z.moves.pop(); save(); render(); } }, 900);
     return;
   }
-  if (st.over) { z.done = true; if (!z.seen) { S.solved = S.solved || {}; S.solved[z.id] = Math.max(S.solved[z.id] || 0, z.fails ? 1 : 2); } vibrate([20, 40, 20]); setTimeout(() => Sound.play('ok'), 200); save(); render(); return; }
+  if (st.over) { z.done = true; if (!z.seen) ratePuzzle(z.id, z.fails ? 0 : 1); if (!z.seen) { S.solved = S.solved || {}; S.solved[z.id] = Math.max(S.solved[z.id] || 0, z.fails ? 1 : 2); } vibrate([20, 40, 20]); setTimeout(() => Sound.play('ok'), 200); save(); render(); return; }
   // respuesta de la defensa
   PZ_BUSY = true; render();
   let reply = null;
@@ -970,12 +1009,12 @@ async function puzzleHint(P) {
   let u = onLine ? P.sol[z.moves.length] : null;
   if (!u) { const left = P.n - Math.floor(z.moves.length / 2); try { u = await Engine.call({ op: 'mate', moves: z.moves, startFen: P.fen, n: left }); } catch (e) { u = null; } }
   if (!u || S.pz !== z) return;
-  z.fails = Math.max(z.fails, 1);
+  z.fails = Math.max(z.fails, 1); ratePuzzle(z.id, 0);
   HINT = [CH.sqParse(u.slice(0, 2))]; PZ_MSG = '💡 Mueve la pieza marcada.'; save(); render();
 }
 function showSolution(P) {
   const z = S.pz; if (PZ_BUSY) return;
-  z.moves = []; z.seen = true; HINT = null; PZ_MSG = ''; PZ_BUSY = true; render();
+  z.moves = []; z.seen = true; ratePuzzle(z.id, 0); HINT = null; PZ_MSG = ''; PZ_BUSY = true; render();
   let i = 0;
   const step = () => {
     if (S.pz !== z) { PZ_BUSY = false; return; }
@@ -1004,7 +1043,7 @@ function openContinue(fen, turn) {
     $('#ctGo').onclick = () => {
       closeModal();
       if (S.game && !S.game.result && S.game.moves.length) { pauseClock(); archiveUpsert(S.game); toast('La partida anterior se ha guardado sin terminar'); }
-      THINK = null; Engine.reset(); REVIEW = null; S.pz = null; S.drill = null; PZ_MSG = '';
+      THINK = null; Engine.reset(); REVIEW = null; EDITOR = null; S.pz = null; S.drill = null; PZ_MSG = '';
       if (st.mode === 'ai') startGame({ mode: 'ai', human: st.color, level: st.level, name: canonName(S.draft.ai.name, 'Tú'), clock: null, learn: !!S.draft.ai.learn, startFen: fen });
       else { const L = S.draft.local; startGame({ mode: 'local', white: canonName(L.white, 'Blancas'), black: canonName(L.black, 'Negras'), clock: null, flip: !!L.flip, startFen: fen }); }
       window.scrollTo(0, 0);
@@ -1145,3 +1184,254 @@ async function drillMove(it, uci) {
   if (!z.seen) S.mist[it.key] = Math.max(S.mist[it.key] || 0, z.fails ? 1 : 2);
   Sound.play('ok'); vibrate([20, 40, 20]); save(); render();
 }
+
+/* ================= Editor de posiciones ================= */
+let EDITOR = null;        // { b: [64 letras o ''], turn: 'w'|'b', cas: {K,Q,k,q}, tool, orient, eval }
+const ED_INDEX = (r, f) => r * 8 + f;     // r = fila 0..7 (0 = fila 1)
+function edFromFen(fen) {
+  const parts = String(fen).trim().split(/\s+/), b = new Array(64).fill('');
+  const rows = (parts[0] || '').split('/');
+  for (let r = 0; r < 8 && r < rows.length; r++) { let f = 0; for (const ch of rows[r]) { if (/\d/.test(ch)) f += +ch; else if (/[pnbrqkPNBRQK]/.test(ch) && f < 8) { b[ED_INDEX(7 - r, f)] = ch; f++; } } }
+  const c = parts[2] || '-';
+  return { b, turn: parts[1] === 'b' ? 'b' : 'w', cas: { K: c.includes('K'), Q: c.includes('Q'), k: c.includes('k'), q: c.includes('q') } };
+}
+function edFen(E) {
+  let s = '';
+  for (let r = 7; r >= 0; r--) { let e = 0; for (let f = 0; f < 8; f++) { const p = E.b[ED_INDEX(r, f)]; if (!p) { e++; continue; } if (e) { s += e; e = 0; } s += p; } if (e) s += e; if (r) s += '/'; }
+  const ok = (sq, p) => E.b[sq] === p;
+  let c = '';
+  if (E.cas.K && ok(4, 'K') && ok(7, 'R')) c += 'K';
+  if (E.cas.Q && ok(4, 'K') && ok(0, 'R')) c += 'Q';
+  if (E.cas.k && ok(60, 'k') && ok(63, 'r')) c += 'k';
+  if (E.cas.q && ok(60, 'k') && ok(56, 'r')) c += 'q';
+  return `${s} ${E.turn} ${c || '-'} - 0 1`;
+}
+// Comprueba la posición: devuelve el texto del problema o ''
+function edCheck(E) {
+  const cnt = {}; E.b.forEach(p => { if (p) cnt[p] = (cnt[p] || 0) + 1; });
+  if ((cnt.K || 0) !== 1 || (cnt.k || 0) !== 1) return 'Tiene que haber un rey de cada color.';
+  for (let f = 0; f < 8; f++) if (/p/i.test(E.b[ED_INDEX(0, f)]) || /p/i.test(E.b[ED_INDEX(7, f)])) return 'No puede haber peones en la primera ni en la última fila.';
+  if ((cnt.P || 0) > 8 || (cnt.p || 0) > 8) return 'No puede haber más de 8 peones de un color.';
+  const tot = c => Object.keys(cnt).filter(k => (c ? k === k.toLowerCase() : k === k.toUpperCase())).reduce((a, k) => a + cnt[k], 0);
+  if (tot(0) > 16 || tot(1) > 16) return 'No puede haber más de 16 piezas de un color.';
+  try { new CH.Position(edFen(E)); } catch (e) { return 'El bando que no juega está en jaque: cambia el turno.'; }
+  return '';
+}
+function openEditor(fen, back) {
+  closeModal();
+  EDITOR = Object.assign(edFromFen(fen || CH.START_FEN), { tool: 'P', orient: 0, back: back || 'home', eval: null });
+  render(); window.scrollTo(0, 0);
+}
+function renderEditor() {
+  const E = EDITOR, err = edCheck(E), fen = edFen(E);
+  let pos = null; if (!err) pos = new CH.Position(fen);
+  const st = pos ? CH.status(pos) : null;
+  let sqs = '', pcs = '';
+  const best = E.eval && E.eval.fen === fen && E.eval.move ? [CH.sqParse(E.eval.move.slice(0, 2)), CH.sqParse(E.eval.move.slice(2, 4))] : [];
+  for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+    const rank = E.orient ? r : 7 - r, file = E.orient ? 7 - f : f, i = ED_INDEX(rank, file), sq = rank * 16 + file;
+    const co = (S.coords !== false ? (f === 0 ? `<b class="cr">${rank + 1}</b>` : '') + (r === 7 ? `<b class="cf">${'abcdefgh'[file]}</b>` : '') : '');
+    sqs += `<div class="sq ${(rank + file) % 2 ? 'l' : 'd'} ${best.includes(sq) ? 'best' : ''}" style="left:${f * 12.5}%;top:${r * 12.5}%">${co}</div>`;
+    const p = E.b[i];
+    if (p) pcs += `<div class="pc" style="left:${f * 12.5}%;top:${r * 12.5}%">${Piezas.piece(CH.LETTER.indexOf(p.toLowerCase()), p === p.toLowerCase() ? 1 : 0)}</div>`;
+  }
+  const tools = ['K', 'Q', 'R', 'B', 'N', 'P', 'k', 'q', 'r', 'b', 'n', 'p'];
+  const castleOk = { K: E.b[4] === 'K' && E.b[7] === 'R', Q: E.b[4] === 'K' && E.b[0] === 'R', k: E.b[60] === 'k' && E.b[63] === 'r', q: E.b[60] === 'k' && E.b[56] === 'r' };
+  let evalTxt = '';
+  if (E.eval && E.eval.fen === fen) {
+    if (E.eval.busy) evalTxt = '🔎 Pensando…';
+    else if (E.eval.move) { const m = pos.fromUci(E.eval.move); evalTxt = `Mejor jugada: <b>${esc(CH.sanEs(pos.san(m)))}</b> · ${evalText(E.eval.score, pos.turn)}`; }
+  }
+  $('#subtitle').textContent = 'Editor de posiciones';
+  $('#app').innerHTML = `<div class="gm ed">
+    <div class="gb">
+      <div class="board" id="edBoard" style="${boardColors()}">${sqs}${pcs}</div>
+    </div>
+    <div class="gs">
+      <div class="palette">${tools.map(t => `<button data-tool="${t}" class="${E.tool === t ? 'on' : ''}" aria-label="${PNAME[CH.LETTER.indexOf(t.toLowerCase())]}">${Piezas.piece(CH.LETTER.indexOf(t.toLowerCase()), t === t.toLowerCase() ? 1 : 0)}</button>`).join('')}<button data-tool="x" class="${E.tool === 'x' ? 'on' : ''} erase" aria-label="Borrar">🧽</button></div>
+      <div class="gstatus ${err ? 'bad' : ''}" style="margin-top:8px">${err ? esc(err) : st && st.over ? (st.reason === 'mate' ? '♚ Jaque mate' : st.reason === 'ahogado' ? 'Rey ahogado' : 'Tablas: ' + esc(CH.REASONS[st.reason])) : 'Toca una casilla para poner la pieza elegida'}</div>
+      <div class="kinds"><button data-turn="w" class="${E.turn === 'w' ? 'on' : ''}">Juegan blancas</button><button data-turn="b" class="${E.turn === 'b' ? 'on' : ''}">Juegan negras</button></div>
+      ${Object.values(castleOk).some(Boolean) ? `<div class="chips" style="margin:8px 0 0">${[['K', 'O-O blancas'], ['Q', 'O-O-O blancas'], ['k', 'O-O negras'], ['q', 'O-O-O negras']].filter(([k]) => castleOk[k]).map(([k, l]) => `<button class="chipb ${E.cas[k] ? 'on' : ''}" data-cas="${k}">${l}</button>`).join('')}</div>` : ''}
+      ${evalTxt ? `<div class="note" style="margin-top:8px">${evalTxt}</div>` : ''}
+      <div class="gacts" style="margin-top:8px">
+        <button class="btn-gold" id="edPlay" ${err || (st && st.over) ? 'disabled' : ''}>▶ Jugar desde aquí</button>
+        <button id="edEval" ${err || (st && st.over) ? 'disabled' : ''}>🔍 Analizar</button>
+      </div>
+      <div class="gacts" style="margin-top:6px">
+        <button id="edStart">Inicial</button><button id="edClear">Vaciar</button><button id="edFen">📋 FEN</button><button id="edFlip" aria-label="Girar">⇅</button>
+      </div>
+      <div class="gacts" style="margin-top:6px"><button class="btn-ghost" id="edBack">‹ Volver</button></div>
+    </div></div>`;
+  const bd = $('#edBoard');
+  bd.onpointerdown = e => {
+    const r = bd.getBoundingClientRect(), f = Math.floor((e.clientX - r.left) / r.width * 8), rr = Math.floor((e.clientY - r.top) / r.height * 8);
+    if (f < 0 || f > 7 || rr < 0 || rr > 7) return;
+    const rank = E.orient ? rr : 7 - rr, file = E.orient ? 7 - f : f, i = ED_INDEX(rank, file);
+    if (E.tool === 'x' || E.b[i] === E.tool) E.b[i] = '';
+    else {
+      if (E.tool === 'K' || E.tool === 'k') E.b = E.b.map(p => p === E.tool ? '' : p);   // solo un rey de cada color: se mueve
+      E.b[i] = E.tool;
+    }
+    E.eval = null; renderEditor();
+  };
+  document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => { E.tool = b.dataset.tool; renderEditor(); });
+  document.querySelectorAll('[data-turn]').forEach(b => b.onclick = () => { E.turn = b.dataset.turn; E.eval = null; renderEditor(); });
+  document.querySelectorAll('[data-cas]').forEach(b => b.onclick = () => { E.cas[b.dataset.cas] = !E.cas[b.dataset.cas]; E.eval = null; renderEditor(); });
+  const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
+  on('edStart', () => { Object.assign(E, edFromFen(CH.START_FEN), { eval: null }); renderEditor(); });
+  on('edClear', () => { E.b = new Array(64).fill(''); E.b[4] = 'K'; E.b[60] = 'k'; E.cas = { K: false, Q: false, k: false, q: false }; E.eval = null; renderEditor(); });
+  on('edFlip', () => { E.orient = 1 - E.orient; renderEditor(); });
+  on('edBack', closeEditor);
+  on('edPlay', () => openContinue(fen, E.turn === 'b' ? 1 : 0));
+  on('edEval', async () => {
+    E.eval = { fen, busy: true }; renderEditor();
+    let r = null; try { r = await Engine.call({ op: 'best', moves: [], startFen: fen, timeMs: 1500 }); } catch (e) {}
+    if (EDITOR !== E || !E.eval || E.eval.fen !== fen) return;
+    E.eval = r && r.move ? { fen, move: r.move, score: r.score } : null; renderEditor();
+  });
+  on('edFen', () => {
+    openModal(`<h3>📋 Posición en FEN</h3><div class="sub">El formato estándar para pasar posiciones entre apps de ajedrez.</div>
+      <textarea id="fenTxt" rows="3" style="width:100%;font:14px ui-monospace,monospace;color:var(--txt);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px">${esc(fen)}</textarea>
+      <div class="menu" style="margin-top:8px"><button id="fenCopy">📋 Copiar</button><button id="fenLoad" class="btn-gold">⬇ Cargar la que he pegado</button></div>
+      <div class="acts"><button class="btn-ghost" id="fenX">Cerrar</button></div>`);
+    $('#fenX').onclick = closeModal;
+    $('#fenCopy').onclick = async () => { try { await navigator.clipboard.writeText(fen); toast('Copiado'); } catch (e) { toast('No se pudo copiar'); } };
+    $('#fenLoad').onclick = () => {
+      const v = $('#fenTxt').value.trim();
+      if (!/^[pnbrqkPNBRQK1-8]+(\/[pnbrqkPNBRQK1-8]+){7}(\s|$)/.test(v)) { toast('Eso no parece una posición FEN'); return; }
+      Object.assign(E, edFromFen(v), { eval: null }); closeModal(); renderEditor();
+    };
+  });
+}
+function closeEditor() { const E = EDITOR; EDITOR = null; render(); if (E && E.back === 'archive') openArchive('partidas'); }
+
+
+/* ================= Jugar en línea ================= */
+// Conexión con el servidor común de juegos (WebSocket). El servidor valida las jugadas y lleva el reloj.
+const Online = (() => {
+  let ws = null, queue = [], retry = 0, timer = null, pending = null;
+  function connect() {
+    if (!ONLINE_URL || (ws && ws.readyState <= 1)) return;
+    try { ws = new WebSocket(ONLINE_URL); } catch (e) { ws = null; schedule(); return; }
+    ws.onopen = () => { retry = 0; const q = queue; queue = []; q.forEach(m => ws.send(JSON.stringify(m))); ONLINE.conn = true; refreshOnline(); };
+    ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (er) { return; } onMessage(m); };
+    ws.onclose = () => { ws = null; ONLINE.conn = false; if (ONLINE.busy) { ONLINE.busy = false; ONLINE.err = 'No se pudo conectar con el servidor. Revisa la conexión.'; render(); } refreshOnline(); if (S.game && S.game.mode === 'online' && !S.game.result) schedule(); };
+    ws.onerror = () => {};
+  }
+  function schedule() { clearTimeout(timer); const g = S.game; if (!g || g.mode !== 'online' || g.result) return; timer = setTimeout(() => { retry++; send({ t: 'unirse', codigo: g.room, token: g.token, nombre: myOnlineName(), juego: 'ajedrez' }); }, Math.min(15000, 1000 * Math.pow(2, retry))); }
+  function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); else { queue = queue.filter(x => x.t !== m.t).concat([m]); connect(); } }
+  function close() { clearTimeout(timer); queue = []; if (ws) { try { ws.onclose = null; ws.close(); } catch (e) {} ws = null; } ONLINE.conn = false; }
+  return { send, close, connect };
+})();
+let ONLINE = { conn: false, busy: false, err: '' };
+function myOnlineName() { return canonName(S.draft.ai.name, 'Tú'); }
+function onlineSetupHtml() {
+  const o = S.draft.online || (S.draft.online = { color: 'r', clock: '10+5', cMin: 10, cInc: 0, code: '' });
+  return `<div class="sec plist"><h2>Tu nombre</h2>
+      <input type="text" maxlength="18" id="oName" placeholder="Tú" value="${esc(S.draft.ai.name)}" autocomplete="off" style="width:100%">
+      <div class="mut" style="margin-top:6px">Es el nombre que verá tu rival.</div></div>
+    <div class="sec"><h2>Unirse a una sala</h2>
+      <div class="mut" style="margin-bottom:8px">Escribe el código que te han pasado.</div>
+      <div class="row"><input type="text" id="oCode" maxlength="4" placeholder="ABCD" value="${esc(o.code || '')}" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase;letter-spacing:6px;font-weight:800;font-size:calc(22px * var(--fs, 1));text-align:center"><button class="btn-gold" id="oJoin" style="flex:0 0 auto">Entrar</button></div></div>
+    <div class="sec"><h2>Crear una sala</h2>
+      <div class="kinds" style="margin-top:0">${[['w', Piezas.piece(6, 0) + 'Blancas'], ['b', Piezas.piece(6, 1) + 'Negras'], ['r', '🎲 Al azar']].map(([k, l]) => `<button class="colbtn ${o.color === k ? 'on' : ''}" data-ocolor="${k}">${l}</button>`).join('')}</div>
+      <div style="margin-top:12px">${clockFields(o, 'o')}</div>
+      <button class="btn-gold" id="oCreate" style="width:100%;margin-top:12px">Crear sala y compartir el código</button></div>
+    ${ONLINE.err ? `<div class="gstatus bad">${esc(ONLINE.err)}</div>` : ''}
+    <div class="mut" style="padding:4px">Se envían al servidor de IT Canarias tu nombre y tus jugadas, solo para la partida; no se guardan. La partida queda en tu historial y cuenta para el Elo.</div>`;
+}
+function bindOnlineSetup() {
+  const o = S.draft.online;
+  const sync = () => { const n = $('#oName'); if (n) S.draft.ai.name = n.value; const c = $('#oCode'); if (c) o.code = c.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); const m = $('#ocMin'); if (m) { o.cMin = m.value; o.cInc = $('#ocInc').value; } save(); };
+  document.querySelectorAll('[data-ocolor]').forEach(b => b.onclick = () => { sync(); o.color = b.dataset.ocolor; render(); });
+  document.querySelectorAll('[data-oclock]').forEach(b => b.onclick = () => { sync(); o.clock = b.dataset.oclock; render(); });
+  document.querySelectorAll('#app input').forEach(el => el.addEventListener('change', sync));
+  $('#oCode').oninput = e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+  $('#oCreate').onclick = () => { sync(); ONLINE.err = ''; ONLINE.busy = true; remember(myOnlineName()); Online.send({ t: 'crear', juego: 'ajedrez', nombre: myOnlineName(), opciones: { color: o.color, reloj: parseClock(o.clock, o.cMin, o.cInc) } }); toast('Conectando…'); };
+  $('#oJoin').onclick = () => { sync(); if (!/^[A-Z0-9]{4}$/.test(o.code)) { toast('El código tiene 4 letras o números'); return; } ONLINE.err = ''; ONLINE.busy = true; remember(myOnlineName()); Online.send({ t: 'unirse', codigo: o.code, nombre: myOnlineName(), juego: 'ajedrez' }); toast('Conectando…'); };
+}
+function newOnlineGame(m) {
+  return { id: 'o' + m.codigo + Date.now().toString(36), created: Date.now(), mode: 'online', room: m.codigo, seat: m.asiento, token: m.token, white: '…', black: '…', moves: [], startFen: null, clock: null, result: null, reason: '', undos: 0, hints: 0, ready: false };
+}
+function onMessage(m) {
+  if (m.t === 'sala') {
+    let g = S.game;
+    // nueva sala, o revancha (la misma sala con una partida nueva)
+    if (!g || g.mode !== 'online' || g.room !== m.codigo || g.result) {
+      if (g && !g.result && g.mode !== 'online' && g.moves.length) { pauseClock(); archiveUpsert(g); }
+      S.game = g = newOnlineGame(m); REVIEW = null; EDITOR = null; S.pz = null; S.drill = null; VIEW_PLY = null; BS.sel = null;
+    }
+    g.seat = m.asiento; g.token = m.token; ONLINE.busy = false; save(); render();
+    return;
+  }
+  if (m.t === 'estado') {
+    const g = S.game; if (!g || g.mode !== 'online' || g.room !== m.codigo) return;
+    const e = m.estado, before = gstate(g).pos;
+    const names = m.jugadores.map((x, i) => x ? x.nombre : (i === g.seat ? myOnlineName() : '…'));
+    g.white = names[0]; g.black = names[1]; g.seat = m.asiento;
+    g.ready = m.jugadores.every(Boolean); g.oppOnline = !!(m.jugadores[1 - g.seat] && m.jugadores[1 - g.seat].conectado);
+    g.revancha = m.revancha || [];
+    // jugada nueva del rival: animación y sonido
+    if (e.moves.length === g.moves.length + 1 && e.moves.slice(0, -1).join() === g.moves.join()) {
+      const u = e.moves[e.moves.length - 1]; ANIM = animFor(before, u); Sound.play(Sound.forMove(before, u)); vibrate(12);
+    }
+    if (e.moves.join() !== g.moves.join()) { g.moves = e.moves.slice(); VIEW_PLY = null; BS.sel = null; }
+    g.clock = e.clock; if (e.times) { g.times = e.times.slice(); g.tick = e.running ? Date.now() : null; }
+    g.drawOffer = e.drawOffer;
+    if (e.result && !g.result) { g.result = e.result; g.reason = e.reason; g.finished = Date.now(); g.tick = null; archiveUpsert(g); setTimeout(() => Sound.play('end'), 200); vibrate([30, 60, 30]); autoBackup(true); }
+    save();
+    if (!REVIEW && !EDITOR && !S.pz && !S.drill) render();
+    return;
+  }
+  if (m.t === 'error') {
+    ONLINE.busy = false;
+    const g = S.game;
+    if (m.codigo === 'no-existe' && g && g.mode === 'online' && !g.result && g.ready === false && !g.moves.length) { S.game = null; }
+    if (g && g.mode === 'online' && S.game) toast(m.msg); else { ONLINE.err = m.msg; }
+    render();
+  }
+}
+function refreshOnline() { const g = S.game; if (g && g.mode === 'online' && !REVIEW && !EDITOR && !S.pz && !S.drill) { const b = document.querySelector('.olbanner'); if (b) b.outerHTML = onlineBanner(g); bindOnlineGame(g); } }
+function onlineBanner(g) {
+  if (!g.ready && !g.result) return `<div class="olbanner"><div>Código de la sala</div><b class="olcode">${esc(g.room)}</b><button class="btn-gold" id="olShare">📤 Enviar el código por WhatsApp</button><div class="mut">La partida empieza cuando entre tu rival.</div></div>`;
+  let t = '';
+  if (!ONLINE.conn && !g.result) t = '📡 Sin conexión con el servidor. Reconectando…';
+  else if (!g.oppOnline && !g.result) t = '📴 Tu rival se ha desconectado. Puede volver en cualquier momento.';
+  else if (g.drawOffer === 1 - g.seat && !g.result) return `<div class="olbanner draw"><div>🤝 Tu rival ofrece tablas</div><div class="gacts"><button class="btn-gold" id="olDrawYes">Aceptar</button><button id="olDrawNo">Rechazar</button></div></div>`;
+  else if (g.drawOffer === g.seat && !g.result) t = '🤝 Has ofrecido tablas. Esperando respuesta…';
+  else if (g.result && g.revancha && g.revancha.length) t = g.revancha.includes(g.seat) ? '↻ Has pedido la revancha. Esperando a tu rival…' : '↻ Tu rival quiere la revancha';
+  return t ? `<div class="olbanner small">${esc(t)}</div>` : '<div class="olbanner hidden"></div>';
+}
+function onlineActs(g) {
+  if (g.result) return `<button class="btn-gold" id="gAnalyse">🔍 Analizar</button><button id="olRematch">↻ Revancha</button><button id="olLeave">✚ Salir</button><button id="gShare">📤 Compartir</button>`;
+  if (!g.ready) return `<button id="olLeave">✕ Cancelar la sala</button>`;
+  return `<button id="olDraw" ${g.moves.length >= 2 && g.drawOffer == null ? '' : 'disabled'}>½ Tablas</button><button id="olResign">🏳 Rendirse</button><button id="gFlip" aria-label="Girar tablero">⇅</button>`;
+}
+function bindOnlineGame(g) {
+  const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
+  on('olShare', () => shareText(`♞ ¿Echamos una partida de ajedrez?\nAbre la app Ajedrez → 🌐 En línea → Unirse y escribe el código: *${g.room}*\n\n¿No tienes la app? Descárgala gratis:\n${isPlay() ? PLAY_URL : APK_URL}`, 'Partida de ajedrez'));
+  on('olDraw', () => Online.send({ t: 'accion', accion: 'tablas' }));
+  on('olDrawYes', () => Online.send({ t: 'accion', accion: 'tablas' }));
+  on('olDrawNo', () => Online.send({ t: 'accion', accion: 'rechazar' }));
+  on('olResign', () => confirmBox('Rendirse', 'La partida contará como perdida.', 'Me rindo', () => Online.send({ t: 'accion', accion: 'rendirse' }), true));
+  on('olRematch', () => { Online.send({ t: 'accion', accion: 'revancha' }); g.revancha = (g.revancha || []).concat([g.seat]); render(); });
+  on('olLeave', () => leaveOnline());
+}
+function leaveOnline() {
+  const g = S.game;
+  const go = () => { Online.send({ t: 'salir' }); setTimeout(() => Online.close(), 300); S.game = null; S.draft.mode = 'online'; render(); };
+  if (g && !g.result && g.ready && g.moves.length) confirmBox('Salir', 'Si sales, la partida sigue en marcha y tu reloj corre. Para terminarla, ríndete u ofrece tablas.', 'Salir igualmente', go, true);
+  else go();
+}
+function onlineMove(g, uci) {
+  if (!g.ready || turnOf(g) !== g.seat) return;
+  const before = gstate(g).pos;
+  ANIM = animFor(before, uci); Sound.play(Sound.forMove(before, uci)); vibrate(12);
+  g.moves.push(uci);                       // se ve al momento; el servidor confirma (o corrige)
+  if (g.clock && g.tick) { g.times[g.seat] = remaining(g, g.seat); }
+  g.tick = g.clock ? Date.now() : null;
+  BS.sel = null; VIEW_PLY = null; save(); render();
+  Online.send({ t: 'jugada', jugada: uci });
+}
+// Al abrir la app con una partida en línea a medias, se vuelve a la sala
+function resumeOnline() { const g = S.game; if (ONLINE_URL && g && g.mode === 'online' && !g.result) Online.send({ t: 'unirse', codigo: g.room, token: g.token, nombre: myOnlineName(), juego: 'ajedrez' }); }

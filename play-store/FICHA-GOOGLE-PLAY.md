@@ -29,7 +29,7 @@ Ajedrez contra la máquina, a dos jugadores y problemas de mate. Sin anuncios.
 Ajedrez para jugar cuando quieras: contra la máquina, con otra persona en el mismo móvil o resolviendo problemas de mate. Sin anuncios, sin cuentas y sin necesidad de internet.
 
 🤖 CONTRA LA MÁQUINA
-• Seis niveles, de principiante a jugador de club aficionado.
+• Seis niveles, de principiante a jugador de club aficionado, calibrados entre sí.
 • Modo aprendizaje: pide una pista cuando quieras y la app te avisa si una jugada pierde material (tú decides si la deshaces).
 • Deshacer jugadas, ofrecer tablas y rendirse.
 • Juega con blancas, con negras o al azar.
@@ -44,7 +44,8 @@ Ajedrez para jugar cuando quieras: contra la máquina, con otra persona en el mi
 • Barra de evaluación y precisión de cada jugador.
 
 🧩 PROBLEMAS DE MATE
-• Problemas de mate en 1, 2 y 3 jugadas. La máquina defiende lo mejor posible.
+• 170 problemas de mate en 1, 2 y 3 jugadas, de fácil a difícil, y un problema nuevo cada día. La máquina defiende lo mejor posible.
+• Elo de problemas y «Repasa tus errores»: vuelve a las posiciones donde fallaste en tus partidas.
 • Pistas y solución paso a paso.
 
 📊 CLASIFICACIÓN
@@ -54,7 +55,8 @@ Ajedrez para jugar cuando quieras: contra la máquina, con otra persona en el mi
 
 ✨ A TU GUSTO
 • Reglas completas: enroque, captura al paso, coronación, ahogado, triple repetición, regla de los 50 movimientos y material insuficiente.
-• Toca o arrastra las piezas. Temas de colores, colores del tablero y tamaño de letra.
+• Editor de posiciones: monta cualquier posición, analízala o juega desde ella.
+• Toca o arrastra las piezas, con sonidos. Temas de colores, colores del tablero y tamaño de letra.
 • Funciona en vertical, en horizontal y en tablet.
 
 🔒 SIN ANUNCIOS Y SIN RECOGER DATOS

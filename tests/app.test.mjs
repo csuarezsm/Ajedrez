@@ -238,12 +238,13 @@ const server = http.createServer(async (req, res) => {
 await new Promise(r => server.listen(0, r));
 const URL_APP = `http://localhost:${server.address().port}/`;
 const browser = await chromium.launch();
-async function fresh(state, viewport) {
+async function fresh(state, viewport, online) {
   const ctx = await browser.newContext({ viewport: viewport || { width: 412, height: 860 }, isMobile: true, hasTouch: true, serviceWorkers: 'block', acceptDownloads: true });
   await ctx.route('https://api.github.com/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ tag_name: 'v0.0.1', assets: [] }) }));
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', e => errors.push(e.message));
+  if (online) await p.addInitScript(u => { window.AJEDREZ_ONLINE_URL = u; }, online);
   await p.addInitScript(st => { if (st && !sessionStorage.getItem('seeded')) { localStorage.setItem('ajedrez.v1', JSON.stringify(st)); sessionStorage.setItem('seeded', '1'); } }, state || { onboarded: true });
   await p.goto(URL_APP);
   return { p, ctx, errors };
@@ -473,6 +474,56 @@ console.log('Repasa tus errores y jugar desde aquí');
   await ctx.close();
 }
 
+console.log('Jugar en línea (con el servidor de juegos)');
+{
+  process.env.SALAS_POR_IP_HORA = '1000';
+  const SV = require('./servidor/servidor.js');
+  await new Promise(r => SV.server.listen(0, r));
+  const WS = `ws://localhost:${SV.server.address().port}/ws`;
+  const A1 = await fresh({ onboarded: true, draft: { mode: 'online', ai: { name: 'Carlos' } } }, null, WS);
+  const B1 = await fresh({ onboarded: true, draft: { mode: 'online', ai: { name: 'Tere' } } }, null, WS);
+  const a = A1.p, b = B1.p;
+  check('sin servidor configurado no aparece la opción', !(await (await fresh()).p.$('[data-mode="online"]')));
+  await a.click('[data-ocolor="w"]'); await a.click('[data-oclock="5+0"]'); await a.click('#oCreate');
+  check('crear sala: aparece el código', await waitFor(a, () => S.game && S.game.mode === 'online' && /^[A-Z2-9]{4}$/.test(S.game.room) && !!document.querySelector('.olcode')));
+  const code = await a.evaluate(() => S.game.room);
+  await b.fill('#oCode', code.toLowerCase()); await b.click('#oJoin');
+  check('el rival entra con el código', await waitFor(b, () => S.game && S.game.ready && S.game.seat === 1 && S.game.white === 'Carlos'));
+  check('y el creador lo ve', await waitFor(a, () => S.game.ready && S.game.black === 'Tere'));
+  check('cada uno ve el tablero desde su color', await a.evaluate(() => orientOf(S.game) === 0) && await b.evaluate(() => orientOf(S.game) === 1));
+  await tap(b, 'e7'); await tap(b, 'e5');
+  check('no se puede mover en el turno del rival', await b.evaluate(() => S.game.moves.length === 0));
+  await move(a, 'f2f3');
+  check('la jugada llega al rival', await waitFor(b, () => S.game.moves.join() === 'f2f3'));
+  check('el reloj del rival corre', await waitFor(b, () => !!S.game.tick && S.game.times[1] <= 300000));
+  await move(b, 'e7e5'); await waitFor(a, () => S.game.moves.length === 2);
+  await move(a, 'g2g4'); await waitFor(b, () => S.game.moves.length === 3);
+  // b se desconecta y vuelve (como al cerrar la app)
+  await b.evaluate(() => Online.close());
+  check('el rival ve la desconexión', await waitFor(a, () => S.game.oppOnline === false));
+  await b.evaluate(() => resumeOnline());
+  check('al volver, sigue la partida', await waitFor(a, () => S.game.oppOnline === true) && await waitFor(b, () => S.game.moves.length === 3));
+  await move(b, 'd8h4');
+  check('mate: los dos lo reciben y se guarda', await waitFor(a, () => S.game.result === '0-1' && S.game.reason === 'mate' && S.archive.some(x => x.mode === 'online')) && await waitFor(b, () => S.game.result === '0-1' && S.archive.length === 1));
+  check('cuenta para el Elo', await b.evaluate(() => { const t = eloTable(); return t.find(o => o.name === 'Tere').elo > 1200 && t.find(o => o.name === 'Carlos').elo < 1200; }));
+  check('el texto dice quién gana', (await a.textContent('.gstatus')).includes('Tere'));
+  await a.click('#olRematch'); await b.click('#olRematch');
+  check('revancha con los colores cambiados', await waitFor(a, () => !S.game.result && S.game.seat === 1 && S.game.ready && S.game.moves.length === 0) && await waitFor(b, () => S.game.seat === 0 && !S.game.result));
+  await move(b, 'd2d4'); await waitFor(a, () => S.game.moves.length === 1);
+  await move(a, 'd7d5'); await waitFor(b, () => S.game.moves.length === 2);
+  await b.click('#olDraw');
+  check('oferta de tablas', await waitFor(a, () => !!document.querySelector('#olDrawYes')));
+  await a.click('#olDrawYes');
+  check('tablas aceptadas', await waitFor(b, () => S.game.result === '1/2-1/2' && S.game.reason === 'acuerdo'));
+  await b.click('#olLeave');
+  check('salir vuelve a la pantalla de en línea', await b.evaluate(() => !S.game && S.draft.mode === 'online'));
+  await b.fill('#oCode', 'ZZZZ'); await b.click('#oJoin');
+  check('código que no existe: aviso', await waitFor(b, () => ONLINE.err.includes('código')));
+  check('sin errores en la página', !A1.errors.length && !B1.errors.length, A1.errors.concat(B1.errors).join(' | '));
+  await A1.ctx.close(); await B1.ctx.close();
+  clearInterval(SV.latido); SV.server.close();
+}
+
 console.log('PGN, copias y datos maliciosos');
 {
   const { p, ctx, errors } = await fresh();
@@ -508,12 +559,12 @@ console.log('PGN, copias y datos maliciosos');
 console.log('Clasificación, menú, temas y borrar');
 {
   const mk = (i, w, b, result, extra) => Object.assign({ id: 'g' + i, created: 1e12 + i * 1e6, finished: 1e12 + i * 1e6 + 5, mode: 'local', white: w, black: b, moves: ['e2e4', 'e7e5', 'g1f3'], result, reason: 'abandono' }, extra || {});
-  const archive = [mk(1, 'Ana', 'Luis', '1-0'), mk(2, 'Luis', 'Ana', '0-1'), mk(3, 'Ana', 'Pepe', '1/2-1/2'), mk(4, 'Pepe', '🤖', '1-0', { mode: 'ai', human: 0, level: 4 }), mk(5, 'Blancas', 'Negras', '1-0')].reverse();
+  const archive = [mk(1, 'Ana', 'Luis', '1-0'), mk(2, 'Luis', 'Ana', '0-1'), mk(3, 'Ana', 'Pepe', '1/2-1/2'), mk(4, 'Pepe', '🤖', '1-0', { mode: 'ai', human: 0, level: 6 }), mk(5, 'Blancas', 'Negras', '1-0')].reverse();
   const { p, ctx, errors } = await fresh({ onboarded: true, archive, roster: ['Ana', 'Luis', 'Pepe'] });
   const t = await p.evaluate(() => eloTable().map(o => [o.name, Math.round(o.elo), o.pj]));
   const elo = n => (t.find(x => x[0] === n) || [])[1];
   check('Elo: Ana por encima de Luis, sin los nombres por defecto', elo('Ana') > elo('Luis') && t.length === 3 && !t.some(x => x[0] === 'Blancas'), JSON.stringify(t));
-  check('ganar a la máquina de nivel 4 sube mucho', t.find(x => x[0] === 'Pepe')[1] > 1220, JSON.stringify(t));
+  check('ganar a la máquina de nivel 6 sube mucho', t.find(x => x[0] === 'Pepe')[1] > 1220, JSON.stringify(t));
   await p.click('#menuBtn'); await p.click('#mArch');
   check('la clasificación se ve', await p.evaluate(() => document.querySelectorAll('#modal tbody tr').length === 3));
   await p.click('#modal [data-player="Ana"]');
