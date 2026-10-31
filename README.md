@@ -2,7 +2,7 @@
 
 Ajedrez para Android: contra la máquina, dos jugadores en el mismo móvil y problemas de mate.
 App Capacitor + web (`www/`). No usa servidor: todos los datos se guardan en el móvil.
-Paquete: `com.itcanarias.ajedrez` · versión 1.0.1
+Paquete: `com.itcanarias.ajedrez` · versión 1.0.2
 
 © 2026 IT Canarias. Todos los derechos reservados.
 
@@ -14,6 +14,8 @@ Paquete: `com.itcanarias.ajedrez` · versión 1.0.1
 - **Reloj** opcional: 3+2, 5+0, 10+5, 15+10 o personalizado. Se para si sales de la app. Si se acaba el tiempo y el rival no puede dar mate, son tablas.
 - **Análisis**: al terminar, el motor evalúa cada posición y marca ★ mejor, ?! imprecisión (≥ 0,6), ? error (≥ 1,3) y ?? error grave (≥ 3 peones). Enseña la mejor jugada en el tablero, la barra de evaluación y la precisión de cada jugador.
 - **Problemas**: 66 problemas de mate (24 en 1, 24 en 2 y 18 en 3). La máquina defiende lo mejor posible; se acepta cualquier jugada que mantenga el mate. Pistas y solución.
+- **Repasa tus errores**: con los errores (?) y errores graves (??) de las partidas analizadas se forman ejercicios: la posición antes del error y hay que encontrar algo mejor. Se acepta la jugada del motor o cualquier otra que no pierda más de 0,7 peones respecto a ella. Contra la máquina solo salen tus errores; en partidas de dos jugadores, los de los dos. Botón para analizar de golpe hasta 5 partidas sin analizar.
+- **Jugar desde aquí**: desde cualquier jugada del análisis, desde un problema o desde un error repasado se empieza una partida nueva desde esa posición, contra la máquina o a dos jugadores. Estas partidas no cuentan para el Elo.
 - **Clasificación**: Elo (inicial 1200, K = 40 las 10 primeras partidas y después 24). La máquina tiene un Elo fijo por nivel. Ficha de jugador, récords e historial con revisión jugada a jugada.
 - **PGN**: exportar una partida o todas, e importar archivos PGN (con comentarios y variantes). Las importadas no cuentan para el Elo.
 - **Aperturas**: nombre de la apertura bajo las jugadas (lista propia en `www/aperturas.js`, unas 140 líneas).

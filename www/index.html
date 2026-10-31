@@ -346,7 +346,7 @@ function openThemes() {
   $('#thOk').onclick = closeModal;
 }
 
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 const REPO = 'csuarezsm/Ajedrez';
 const MAX_ARCHIVE = 500;
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -370,6 +370,8 @@ S.archive = S.archive || [];
 S.roster = Array.isArray(S.roster) ? S.roster : [];
 S.solved = S.solved || {};
 S.pz = S.pz || null;
+S.drill = S.drill || null;
+S.mist = S.mist || {};
 
 /* ================= Utilidades UI ================= */
 let toastT;
@@ -398,6 +400,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function render() {
   save();
   if (REVIEW) renderReview();
+  else if (S.drill) renderDrill();
   else if (S.pz) renderPuzzle();
   else if (S.game) renderGame();
   else renderSetup();
@@ -619,14 +622,14 @@ function openWipe() {
     <div class="menu">
       ${S.archive.length ? '<button id="wCopy">💾 Guardar una copia antes</button>' : ''}
       <button id="wHist">Solo el historial de partidas<br><small class="mut">Se mantienen jugadores, problemas, colores y la partida en curso</small></button>
-      <button id="wPz">Solo los problemas resueltos</button>
+      <button id="wPz">Solo los problemas resueltos y el repaso de errores</button>
       <button id="wAll" class="btn-red">Todo: dejar la app como nueva<br><small>Partidas, jugadores, problemas, colores y copias automáticas</small></button>
     </div>
     <div class="acts"><button class="btn-ghost" id="wNo">Cancelar</button></div>`);
   $('#wNo').onclick = closeModal;
   const cp = $('#wCopy'); if (cp) cp.onclick = () => exportBackup(false);
   $('#wHist').onclick = () => confirmBox('Borrar historial', `Se borrarán las ${S.archive.length} partidas guardadas y la clasificación.`, 'Borrar historial', () => { S.archive = []; save(); render(); toast('Historial borrado'); autoBackup(true); }, true);
-  $('#wPz').onclick = () => confirmBox('Borrar problemas resueltos', 'Los problemas volverán a aparecer sin resolver.', 'Borrar', () => { S.solved = {}; S.pz = null; save(); render(); toast('Problemas reiniciados'); }, true);
+  $('#wPz').onclick = () => confirmBox('Borrar problemas resueltos', 'Los problemas volverán a aparecer sin resolver.', 'Borrar', () => { S.solved = {}; S.mist = {}; S.pz = null; S.drill = null; save(); render(); toast('Problemas reiniciados'); }, true);
   $('#wAll').onclick = () => confirmBox('Borrar TODO', 'La app quedará como recién instalada. ¿Seguro?', 'Sí, borrar todo', () => confirmBox('Última confirmación', 'Se perderán todas las partidas y ajustes de este móvil.', 'Borrar definitivamente', wipeAll, true), true);
 }
 async function wipeAll() {
@@ -704,7 +707,7 @@ async function shareApp() {
 /* ---------- Copia de seguridad ---------- */
 const isNative = () => !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 function backupJSON() {
-  return JSON.stringify({ app: 'ajedrez', format: 1, version: APP_VERSION, exported: new Date().toISOString(), archive: S.archive, game: S.game, roster: S.roster, solved: S.solved, theme: S.theme, board: S.board, coords: S.coords, sound: S.sound, fontScale: S.fontScale });
+  return JSON.stringify({ app: 'ajedrez', format: 1, version: APP_VERSION, exported: new Date().toISOString(), archive: S.archive, game: S.game, roster: S.roster, solved: S.solved, mist: S.mist, theme: S.theme, board: S.board, coords: S.coords, sound: S.sound, fontScale: S.fontScale });
 }
 const SAFE_ID = /^[A-Za-z0-9_-]{1,40}$/;
 const UCI_RE = /^[a-h][1-8][a-h][1-8][qrbn]?$/;
@@ -744,6 +747,7 @@ function mergeBackup(b) {
   (Array.isArray(b.roster) ? b.roster : []).map(cleanName).forEach(n => { if (n && !isPlaceholder(n) && !S.roster.some(x => nkey(x) === nkey(n))) S.roster.push(n); });
   S.archive.forEach(a => gameNames(a).forEach(n => { if (n && !isPlaceholder(n) && !S.roster.some(x => nkey(x) === nkey(n))) S.roster.push(n); }));
   if (b.solved && typeof b.solved === 'object') for (const k in b.solved) if (SAFE_ID.test(k)) S.solved[k] = Math.max(S.solved[k] || 0, Math.min(2, num(b.solved[k], 0)));
+  if (b.mist && typeof b.mist === 'object') for (const k in b.mist) if (/^[A-Za-z0-9_-]{1,40}:\d{1,4}$/.test(k)) S.mist[k] = Math.max(S.mist[k] || 0, Math.min(2, num(b.mist[k], 0)));
   if (!S.theme && THEMES[b.theme]) { S.theme = b.theme; applyTheme(S.theme); }
   if (!S.board && BOARDS[b.board]) S.board = b.board;
   if (!S.fontScale && FONT_SIZES.some(f => f[0] === String(b.fontScale))) { S.fontScale = String(b.fontScale); applyFont(); }
@@ -836,7 +840,7 @@ const fmt1 = v => (Math.round(v * 10) / 10).toLocaleString('es-ES');
 const medal = i => ['🥇', '🥈', '🥉'][i] || (i + 1) + '.';
 // Partidas que cuentan: terminadas, no importadas de PGN, con al menos un jugador con nombre
 function ratedGames() {
-  return S.archive.filter(a => a.result && a.mode !== 'pgn' && (a.moves || []).length >= 2).slice().sort((x, y) => (x.finished || x.created) - (y.finished || y.created));
+  return S.archive.filter(a => a.result && a.mode !== 'pgn' && !a.startFen && (a.moves || []).length >= 2).slice().sort((x, y) => (x.finished || x.created) - (y.finished || y.created));
 }
 // Recorre las partidas en orden y calcula el Elo de cada jugador (la máquina tiene un Elo fijo por nivel)
 function eloTable() {
@@ -969,7 +973,7 @@ function openArchive(tab) {
           • Todos empiezan con <b>1200</b> puntos de Elo. Al ganar a alguien con más Elo se suben más puntos que al ganar a alguien con menos; al perder, al revés.<br>
           • La máquina cuenta con un Elo fijo por nivel (${LEVELS.slice(1).map((L, i) => (i + 1) + ': ' + L.elo).join(' · ')}). Son valores aproximados para comparar, no oficiales.<br>
           • En las 10 primeras partidas el Elo se mueve más deprisa (K = 40) y después se estabiliza (K = 24).<br>
-          • Cuentan las partidas terminadas contra la máquina o entre jugadores con nombre. Las importadas de PGN no cuentan.<br>
+          • Cuentan las partidas terminadas contra la máquina o entre jugadores con nombre. No cuentan las importadas de PGN ni las que empiezan desde una posición («Jugar desde aquí»).<br>
           • PJ = partidas jugadas · G = ganadas · T = tablas · P = perdidas · % pts = puntos sobre el máximo.</div></details>`
         : '<div class="empty">Aún no hay partidas terminadas que cuenten.</div>';
   } else if (AV.tab === 'records') {
@@ -1009,12 +1013,12 @@ function openArchive(tab) {
 
 /* ---------- Menú ---------- */
 $('#menuBtn').onclick = () => {
-  const g = S.game, live = g && !g.result && !REVIEW && !S.pz;
+  const g = S.game, live = g && !g.result && !REVIEW && !S.pz && !S.drill;
   openModal(`<h3>Menú</h3><div class="menu">
     ${live ? `<button id="mPgn">📋 Compartir la partida (PGN)</button><button id="mLeave">🚪 Salir de la partida</button>` : ''}
     ${g && g.result && !REVIEW && !S.pz ? '<button id="mNew" class="btn-gold">✚ Nueva partida</button>' : ''}
     <button id="mArch">📊 Clasificación y partidas</button>
-    ${S.pz || (S.draft.mode === 'puzzles' && !g) ? '' : '<button id="mPz">🧩 Problemas de mate</button>'}
+    ${S.pz || S.drill || (S.draft.mode === 'puzzles' && !g) ? '' : '<button id="mPz">🧩 Problemas y repaso de errores</button>'}
     <button id="mShareApp">📲 Compartir la app</button>
     <button id="mRoster">👥 Jugadores habituales</button>
     ${isPlay() ? '' : hasUpd() ? `<button id="mUpd" class="btn-gold">🎉 Actualizar a v${esc(S.updAvail.v)} (nueva)</button>` : '<button id="mUpd">🔄 Buscar actualizaciones</button>'}
@@ -1036,7 +1040,7 @@ $('#menuBtn').onclick = () => {
   on('mArch', () => openArchive('ranking'));
   on('mPgn', () => sharePgn(g));
   on('mNew', () => { closeModal(); S.game = null; render(); });
-  on('mPz', () => { closeModal(); REVIEW = null; if (S.game && S.game.result) S.game = null; S.draft.mode = 'puzzles'; if (S.game) { toast('Termina o sal de la partida para ir a los problemas'); return; } render(); });
+  on('mPz', () => { closeModal(); REVIEW = null; S.drill = null; if (S.game && S.game.result) S.game = null; S.draft.mode = 'puzzles'; if (S.game) { toast('Termina o sal de la partida para ir a los problemas'); return; } render(); });
   on('mLeave', openLeave);
   on('mAbout', () => {
     openModal(`<h3>Ajedrez</h3>
@@ -1073,6 +1077,7 @@ function openLeave() {
 function goBack() {
   if (!$('#modal').classList.contains('hidden')) { closeModal(); return true; }
   if (REVIEW) { closeReview(); return true; }
+  if (S.drill) { S.drill = null; PZ_MSG = ''; HINT = null; S.draft.mode = 'puzzles'; render(); return true; }
   if (S.pz) { S.pz = null; PZ_MSG = ''; HINT = null; S.draft.mode = 'puzzles'; render(); return true; }
   if (S.game && VIEW_PLY != null) { VIEW_PLY = null; render(); return true; }
   if (S.game && S.game.result) { S.game = null; render(); return true; }

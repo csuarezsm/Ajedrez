@@ -287,7 +287,7 @@ function rosterChips(cur, attr) {
 }
 function renderSetup() {
   const d = S.draft;
-  $('#subtitle').textContent = d.mode === 'puzzles' ? 'Problemas de mate' : d.mode === 'local' ? 'Dos jugadores' : 'Contra la máquina';
+  $('#subtitle').textContent = d.mode === 'puzzles' ? 'Problemas y repaso de errores' : d.mode === 'local' ? 'Dos jugadores' : 'Contra la máquina';
   let body = '';
   if (d.mode === 'puzzles') body = puzzlesHtml();
   else if (d.mode === 'local') {
@@ -371,17 +371,17 @@ function startGame(o) {
       remember(name);
     }
   }
-  const g = { id: uid(), created: Date.now(), mode: o.mode, moves: [], startFen: null, clock: o.clock || null, result: null, reason: '', undos: 0, hints: 0 };
+  const g = { id: uid(), created: Date.now(), mode: o.mode, moves: [], startFen: o.startFen || null, clock: o.clock || null, result: null, reason: '', undos: 0, hints: 0 };
   if (o.mode === 'ai') Object.assign(g, { human: o.human, level: o.level, learn: !!o.learn, white: o.human === 0 ? o.name : levelLabel(o.level), black: o.human === 1 ? o.name : levelLabel(o.level) });
   else Object.assign(g, { white: o.white, black: o.black, flip: !!o.flip });
   if (g.clock) { g.times = [g.clock.base, g.clock.base]; g.tick = null; }
-  S.game = g; REVIEW = null; BS.sel = null; VIEW_PLY = null; HINT = null; LEARN_WAIT = null;
+  S.game = g; REVIEW = null; S.pz = null; S.drill = null; BS.sel = null; VIEW_PLY = null; HINT = null; LEARN_WAIT = null;
   keepAwake(); render();
 }
 function rematch() {
   const g = S.game; if (!g) return;
-  if (g.mode === 'ai') startGame({ mode: 'ai', human: 1 - g.human, level: g.level, name: g.human === 0 ? g.white : g.black, clock: g.clock, learn: g.learn });
-  else startGame({ mode: 'local', white: g.black, black: g.white, clock: g.clock, flip: g.flip });
+  if (g.mode === 'ai') startGame({ mode: 'ai', human: 1 - g.human, level: g.level, name: g.human === 0 ? g.white : g.black, clock: g.clock, learn: g.learn, startFen: g.startFen });
+  else startGame({ mode: 'local', white: g.black, black: g.white, clock: g.clock, flip: g.flip, startFen: g.startFen });
 }
 
 /* ================= Partida en curso ================= */
@@ -821,6 +821,7 @@ function renderReview() {
       <div class="mlist">${list || '<span class="mut">Sin jugadas.</span>'}</div>
       <div class="gacts">
         ${!g.analysis && !RV.analysing && g.moves.length ? '<button class="btn-gold" id="rvAn">🔍 Analizar con el motor</button>' : ''}
+        ${!st.over ? '<button id="rvPlay">▶ Jugar desde aquí</button>' : ''}
         <button id="rvPgn">📤 PGN</button>
         ${!isCurrent ? '<button id="rvDel" class="btn-ghost">🗑 Borrar</button>' : ''}
         <button id="rvBack">‹ Volver</button>
@@ -840,6 +841,7 @@ function renderReview() {
   on('rvAn', runAnalysis);
   on('rvBest', () => { RV.showBest = !RV.showBest; renderReview(); });
   on('rvPgn', () => sharePgn(g));
+  on('rvPlay', () => openContinue(bpos.fen(), bpos.turn));
   on('rvBack', closeReview);
   on('rvDel', () => confirmBox('Borrar partida', 'Se quitará del historial y de la clasificación.', 'Borrar', () => { S.archive = S.archive.filter(a => a.id !== g.id); save(); REVIEW = null; render(); openArchive('partidas'); }, true));
   // deslizar con el dedo sobre el tablero también avanza/retrocede
@@ -866,7 +868,7 @@ function puzzlesHtml() {
   const solved = S.solved || {};
   const tot = PZ.filter(p => solved[p.id]).length;
   const next = PZ.find(p => !solved[p.id]);
-  return `<div class="sec"><h2>Problemas de mate</h2>
+  return drillSectionHtml() + `<div class="sec"><h2>Problemas de mate</h2>
       <div class="mut" style="margin-bottom:10px">Encuentra el jaque mate. Juega el bando que tiene el turno y la máquina defiende lo mejor posible. Resueltos: <b>${tot} de ${PZ.length}</b>.</div>
       <div class="pzbar"><i style="width:${PZ.length ? Math.round(tot / PZ.length * 100) : 0}%"></i></div>
       ${next ? `<button class="btn-gold" data-pz="${next.id}" style="width:100%;margin-top:12px">▶ Siguiente sin resolver</button>` : '<div class="empty">🏆 ¡Los has resuelto todos!</div>'}
@@ -875,7 +877,11 @@ function puzzlesHtml() {
       <div class="pzgrid">${list.map((p, i) => `<button data-pz="${p.id}" class="${solved[p.id] === 2 ? 'ok1' : solved[p.id] ? 'ok' : ''}">${i + 1}</button>`).join('')}</div></div>` : ''; }).join('')}
     <div class="mut" style="padding:0 4px 10px">Dorado = resuelto a la primera · borde = resuelto con algún fallo o viendo la solución.</div>`;
 }
-function bindPuzzles() { document.querySelectorAll('[data-pz]').forEach(b => b.onclick = () => openPuzzle(b.dataset.pz)); }
+function bindPuzzles() {
+  document.querySelectorAll('[data-pz]').forEach(b => b.onclick = () => openPuzzle(b.dataset.pz));
+  const ds = $('#drStart'); if (ds) ds.onclick = () => { const l = mistakeList(); if (l.length) openDrill(l[0].key); };
+  const da = $('#drAnalyse'); if (da) da.onclick = analysePending;
+}
 function openPuzzle(id) {
   if (!pzById(id)) return;
   S.pz = { id, moves: [], fails: 0, seen: false, done: false };
@@ -903,7 +909,7 @@ function renderPuzzle() {
     <div class="gs">
       <div class="gstatus ${z.done ? 'end' : ''} ${PZ_MSG && !z.done ? 'bad' : ''}">${esc(msg)}</div>
       <div class="gacts">
-        ${z.done ? `<button class="btn-gold" id="pzNext">Siguiente ›</button><button id="pzRetry">↻ Repetir</button>` : `<button id="pzHint">💡 Pista</button><button id="pzRetry" ${z.moves.length ? '' : 'disabled'}>↻ Empezar de nuevo</button><button id="pzSol">👀 Solución</button>`}
+        ${z.done ? `<button class="btn-gold" id="pzNext">Siguiente ›</button><button id="pzRetry">↻ Repetir</button><button id="pzPlay">▶ Jugar desde el inicio</button>` : `<button id="pzHint">💡 Pista</button><button id="pzRetry" ${z.moves.length ? '' : 'disabled'}>↻ Empezar de nuevo</button><button id="pzSol">👀 Solución</button>`}
         <button id="pzBack">‹ Problemas</button>
       </div>
       ${z.done ? `<div class="mut" style="margin-top:8px">Solución: ${esc(solutionText(P))}</div>` : ''}
@@ -916,6 +922,7 @@ function renderPuzzle() {
   on('pzNext', () => { PZ_MSG = ''; openPuzzle(nextP.id); });
   on('pzHint', () => puzzleHint(P));
   on('pzSol', () => showSolution(P));
+  on('pzPlay', () => openContinue(P.fen, start.turn));
 }
 function solutionText(P) {
   const p = new CH.Position(P.fen); const out = []; let n = p.full, w = p.turn === 0;
@@ -977,4 +984,164 @@ function showSolution(P) {
     setTimeout(step, 750);
   };
   setTimeout(step, 400);
+}
+
+
+/* ================= Jugar desde una posición ================= */
+// Abre la elección de modo para seguir jugando desde la posición `fen` (turn = bando que juega)
+function openContinue(fen, turn) {
+  const st = { mode: 'ai', color: turn, level: S.draft.ai.level || 3 };
+  const draw = () => {
+    openModal(`<h3>▶ Jugar desde aquí</h3><div class="sub">Empieza una partida nueva desde esta posición. No cuenta para el Elo.</div>
+      <div class="kinds" style="margin:0 0 12px">${[['ai', '🤖 Contra la máquina'], ['local', '👥 Dos jugadores']].map(([k, l]) => `<button data-cm="${k}" class="${st.mode === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${st.mode === 'ai' ? `<div class="pf-t">Juegas con</div><div class="kinds" style="margin:0 0 12px">${[0, 1].map(c => `<button class="colbtn ${st.color === c ? 'on' : ''}" data-cc="${c}">${Piezas.piece(6, c)}${c ? 'Negras' : 'Blancas'}${c === turn ? ' <small>(mueven)</small>' : ''}</button>`).join('')}</div>
+        <div class="pf-t">Nivel</div><div class="chips">${LEVELS.slice(1).map((L, i) => `<button class="chipb ${st.level === i + 1 ? 'on' : ''}" data-cl="${i + 1}">${i + 1} · ${esc(L.name)}</button>`).join('')}</div>` : '<div class="mut" style="margin-bottom:8px">Se usan los nombres de «Dos jugadores» de la pantalla de inicio.</div>'}
+      <div class="acts"><button class="btn-ghost" id="ctNo">Cancelar</button><button class="btn-gold" id="ctGo">Empezar</button></div>`);
+    document.querySelectorAll('[data-cm]').forEach(b => b.onclick = () => { st.mode = b.dataset.cm; draw(); });
+    document.querySelectorAll('[data-cc]').forEach(b => b.onclick = () => { st.color = +b.dataset.cc; draw(); });
+    document.querySelectorAll('[data-cl]').forEach(b => b.onclick = () => { st.level = +b.dataset.cl; draw(); });
+    $('#ctNo').onclick = closeModal;
+    $('#ctGo').onclick = () => {
+      closeModal();
+      if (S.game && !S.game.result && S.game.moves.length) { pauseClock(); archiveUpsert(S.game); toast('La partida anterior se ha guardado sin terminar'); }
+      THINK = null; Engine.reset(); REVIEW = null; S.pz = null; S.drill = null; PZ_MSG = '';
+      if (st.mode === 'ai') startGame({ mode: 'ai', human: st.color, level: st.level, name: canonName(S.draft.ai.name, 'Tú'), clock: null, learn: !!S.draft.ai.learn, startFen: fen });
+      else { const L = S.draft.local; startGame({ mode: 'local', white: canonName(L.white, 'Blancas'), black: canonName(L.black, 'Negras'), clock: null, flip: !!L.flip, startFen: fen }); }
+      window.scrollTo(0, 0);
+    };
+  };
+  draw();
+}
+
+/* ================= Repasa tus errores ================= */
+// Errores y errores graves de las partidas analizadas (los tuyos contra la máquina; los de los dos en partidas de dos jugadores)
+function mistakeList() {
+  const out = [], done = S.mist || {};
+  for (const a of S.archive) {
+    if (!a.analysis || a.mode === 'pgn') continue;
+    const ann = annotate(a); if (!ann) continue;
+    let t0; try { t0 = new CH.Position(a.startFen || CH.START_FEN).turn; } catch (e) { continue; }
+    ann.forEach((x, i) => {
+      if ((x.cls !== 'grave' && x.cls !== 'error') || !x.best) return;
+      const c = (t0 + i) % 2;
+      if (a.mode === 'ai' && c !== a.human) return;
+      out.push({ key: a.id + ':' + i, g: a, ply: i, best: x.best, played: a.moves[i], loss: x.loss, before: x.before, color: c, who: c ? a.black : a.white, ts: a.finished || a.created, state: done[a.id + ':' + i] });
+    });
+  }
+  // primero los pendientes y, dentro, los más recientes
+  return out.sort((x, y) => ((x.state === 2) - (y.state === 2)) || (y.ts - x.ts) || (x.ply - y.ply));
+}
+function drillSectionHtml() {
+  const list = mistakeList(), pend = list.filter(x => x.state !== 2).length;
+  const noAn = S.archive.filter(a => !a.analysis && a.result && a.mode !== 'pgn' && a.moves.length >= 6).length;
+  return `<div class="sec"><h2>🔁 Repasa tus errores</h2>
+    <div class="mut" style="margin-bottom:10px;line-height:1.45">Vuelve a las posiciones donde se cometió un error en vuestras partidas analizadas y busca una jugada mejor.${list.length ? ` Hay <b>${list.length}</b>; pendientes <b>${pend}</b>.` : ''}</div>
+    ${list.length ? `<button class="btn-gold" id="drStart" style="width:100%">▶ ${pend ? 'Repasar (' + pend + (pend === 1 ? ' pendiente)' : ' pendientes)') : 'Repasar otra vez'}</button>` : `<div class="mut" style="margin-bottom:6px">${S.archive.some(a => a.analysis) ? 'Las partidas analizadas no tienen errores. ¡Bien jugado!' : 'Aún no hay partidas analizadas.'}</div>`}
+    ${noAn ? `<button id="drAnalyse" style="width:100%;margin-top:8px">🔍 Analizar ${Math.min(noAn, 5)} partida${Math.min(noAn, 5) === 1 ? '' : 's'} sin analizar${noAn > 5 ? ' (de ' + noAn + ')' : ''}</button>` : ''}
+  </div>`;
+}
+// Analiza hasta 5 partidas terminadas que aún no tienen análisis
+async function analysePending() {
+  const list = S.archive.filter(a => !a.analysis && a.result && a.mode !== 'pgn' && a.moves.length >= 6).slice(0, 5);
+  if (!list.length) return;
+  let stop = false, i = 0;
+  const draw = p => {
+    const box = document.querySelector('#apProg');
+    if (box) { box.querySelector('i').style.width = Math.round(p * 100) + '%'; box.querySelector('span').textContent = `Partida ${Math.min(i + 1, list.length)} de ${list.length} · ${Math.round(p * 100)}%`; }
+  };
+  openModal(`<h3>🔍 Analizando partidas</h3><div class="sub">El motor revisa cada jugada. Tarda unos segundos por partida.</div>
+    <div class="anprog" id="apProg"><i style="width:0%"></i><span>Partida 1 de ${list.length}</span></div>
+    <div class="acts"><button class="btn-ghost" id="apStop">Parar</button></div>`);
+  modalOnClose = () => { stop = true; Engine.reset(); };
+  $('#apStop').onclick = closeModal;
+  for (i = 0; i < list.length && !stop; i++) {
+    const a = list[i];
+    let ev = null;
+    try { ev = await Engine.call({ op: 'analyse', moves: a.moves, startFen: a.startFen, timeMs: analysisMs(a.moves.length) }, p => draw((i + p) / list.length)); } catch (e) { ev = null; }
+    if (stop) break;
+    if (ev) { a.analysis = { evals: ev.map(e => [e.best || '', e.score]), at: Date.now() }; save(); }
+  }
+  if (!stop) { modalOnClose = null; closeModal(); toast('Análisis terminado'); }
+  render();
+}
+function openDrill(key) {
+  S.drill = { key, done: false, fails: 0, seen: false, move: null };
+  PZ_MSG = ''; HINT = null; BS.sel = null; render(); window.scrollTo(0, 0);
+}
+let DR_BUSY = false;
+function renderDrill() {
+  const list = mistakeList(), it = list.find(x => x.key === S.drill.key);
+  if (!it) { S.drill = null; return render(); }
+  const z = S.drill, g = it.g;
+  const base = CH.replay(g.moves.slice(0, it.ply), g.startFen).pos;
+  const pos = z.move ? CH.replay(g.moves.slice(0, it.ply).concat([z.move]), g.startFen).pos : base;
+  const lastU = z.move || g.moves[it.ply - 1];
+  const last = lastU ? [CH.sqParse(lastU.slice(0, 2)), CH.sqParse(lastU.slice(2, 4))] : [];
+  const myTurn = !z.done && !DR_BUSY && !z.move;
+  const targets = BS.sel != null && myTurn ? pos.legal().filter(m => CH.mFrom(m) === BS.sel).map(m => CH.mTo(m)) : [];
+  const playedSan = CH.sanEs(base.san(base.fromUci(it.played)));
+  const bestM = base.fromUci(it.best), bestSan = bestM ? CH.sanEs(base.san(bestM)) : it.best;
+  const idx = list.indexOf(it) + 1;
+  const d = new Date(it.ts).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }).replace('.', '');
+  const rival = it.color === 0 ? g.black : g.white;
+  let best = [];
+  if (z.done && bestM) best = [CH.mFrom(bestM), CH.mTo(bestM)];
+  const st = CH.status(pos);
+  $('#subtitle').textContent = 'Repasa tus errores · ' + idx + ' de ' + list.length;
+  const msg = z.done ? (z.seen ? `👀 La mejor era ${bestSan}.` : z.fails ? `✅ ¡Bien! (la del motor era ${bestSan})` : `🏆 ¡A la primera! (la del motor era ${bestSan})`) : PZ_MSG || (DR_BUSY ? '🔎 Comprobando tu jugada…' : `Juegan las ${COLOR_TXT[it.color]}: busca algo mejor`);
+  $('#app').innerHTML = `<div class="gm">
+    <div class="gb">
+      <div class="pzhead"><span class="pk">${Piezas.piece(6, it.color)}</span><div><b>${esc(it.who)} contra ${esc(rival)}</b><span class="mut">${esc(d)} · jugada ${Math.floor(it.ply / 2) + 1}</span></div></div>
+      <div class="board" id="board" style="${boardColors()}">${boardHtml({ pos, orient: it.color, last, sel: myTurn ? BS.sel : null, targets, hint: HINT || [], best, check: st.check ? pos.kings[pos.turn] : -1 })}</div>
+    </div>
+    <div class="gs">
+      <div class="gstatus ${z.done ? 'end' : ''} ${PZ_MSG && !z.done ? 'bad' : ''}">${esc(msg)}</div>
+      <div class="note" style="margin-top:8px">En la partida se jugó <b class="c-blun">${esc(playedSan)}${it.loss >= 300 ? '??' : '?'}</b> y se perdió ${it.loss >= 900 ? 'mucho' : 'unos ' + fmtPawns(it.loss) + ' peones'}.</div>
+      <div class="gacts" style="margin-top:8px">
+        ${z.done ? `<button class="btn-gold" id="drNext">Siguiente ›</button><button id="drRetry">↻ Repetir</button><button id="drPlay">▶ Jugar desde aquí</button>` : `<button id="drHint" ${DR_BUSY ? 'disabled' : ''}>💡 Pista</button><button id="drSol" ${DR_BUSY ? 'disabled' : ''}>👀 Solución</button>`}
+        <button id="drGame">📜 Ver la partida</button><button id="drBack">‹ Volver</button>
+      </div>
+    </div></div>`;
+  const bd = $('#board'); animate(bd, it.color);
+  bindBoard(bd, { pos, orient: it.color, canPick: sq => myTurn && pos.b[sq] && (pos.b[sq] >> 3) === pos.turn, onMove: u => drillMove(it, u), redraw: renderDrill });
+  const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
+  on('drBack', () => { S.drill = null; PZ_MSG = ''; HINT = null; S.draft.mode = 'puzzles'; render(); });
+  on('drRetry', () => { z.done = false; z.move = null; z.seen = false; PZ_MSG = ''; HINT = null; render(); });
+  on('drNext', () => { const nl = mistakeList(), nx = nl.find(x => x.key !== it.key && x.state !== 2) || nl[(nl.findIndex(x => x.key === it.key) + 1) % nl.length]; PZ_MSG = ''; openDrill(nx.key); });
+  on('drHint', () => { HINT = bestM ? [CH.mFrom(bestM)] : []; z.fails = Math.max(1, z.fails); PZ_MSG = '💡 Mueve la pieza marcada.'; render(); });
+  on('drSol', () => { z.seen = true; z.done = true; z.move = null; PZ_MSG = ''; HINT = null; S.mist = S.mist || {}; if (!S.mist[it.key]) S.mist[it.key] = 0; save(); render(); });
+  on('drPlay', () => openContinue(base.fen(), base.turn));
+  on('drGame', () => { openGameReview(g, 'drill'); REVIEW.ply = it.ply + 1; render(); });
+}
+async function drillMove(it, uci) {
+  const z = S.drill; if (!z || z.done || DR_BUSY) return;
+  const g = it.g, before = CH.replay(g.moves.slice(0, it.ply), g.startFen).pos;
+  ANIM = animFor(before, uci); Sound.play(Sound.forMove(before, uci));
+  z.move = uci; HINT = null; PZ_MSG = '';
+  let ok = uci === it.best;
+  if (!ok && uci !== it.played) {
+    const after = CH.replay(g.moves.slice(0, it.ply).concat([uci]), g.startFen).pos, st = CH.status(after);
+    if (st.over && st.reason === 'mate') ok = true;
+    else {
+      DR_BUSY = true; render();
+      let r1 = null, r0 = null;
+      try { [r0, r1] = await Promise.all([Engine.call({ op: 'best', moves: g.moves.slice(0, it.ply), startFen: g.startFen, timeMs: 500 }), Engine.call({ op: 'best', moves: g.moves.slice(0, it.ply).concat([uci]), startFen: g.startFen, timeMs: 500 })]); } catch (e) {}
+      DR_BUSY = false;
+      if (S.drill !== z) return;
+      if (r0 && r1) {
+        const bs = Math.max(MO.capScore(r0.score), it.before), as = -MO.capScore(r1.score);
+        ok = r0.move === uci || bs - as < 70 || (bs >= 2000 && as >= 2000);
+      } else if (st.over) ok = st.result !== '1/2-1/2';
+    }
+  } else render();
+  if (S.drill !== z) return;
+  if (!ok) {
+    z.fails++; PZ_MSG = uci === it.played ? '❌ Esa es la jugada de la partida. Busca otra.' : '❌ Esa tampoco es buena. Prueba otra vez.';
+    Sound.play('bad'); vibrate(60); render();
+    setTimeout(() => { if (S.drill === z && z.move === uci && !z.done) { z.move = null; render(); } }, 900);
+    return;
+  }
+  z.done = true; S.mist = S.mist || {};
+  if (!z.seen) S.mist[it.key] = Math.max(S.mist[it.key] || 0, z.fails ? 1 : 2);
+  Sound.play('ok'); vibrate([20, 40, 20]); save(); render();
 }

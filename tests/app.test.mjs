@@ -251,7 +251,7 @@ async function fresh(state, viewport) {
 async function sqXY(p, sq) {
   return p.evaluate(sq => {
     const el = document.querySelector('#board'), r = el.getBoundingClientRect();
-    const orient = S.pz ? new Ajedrez.Position(pzById(S.pz.id).fen).turn : REVIEW ? 0 : orientOf(S.game);
+    const orient = REVIEW ? (REVIEW.orient != null ? REVIEW.orient : 0) : S.drill ? mistakeList().find(x => x.key === S.drill.key).color : S.pz ? new Ajedrez.Position(pzById(S.pz.id).fen).turn : orientOf(S.game);
     const f = sq.charCodeAt(0) - 97, rk = +sq[1] - 1, x = orient ? 7 - f : f, y = orient ? rk : 7 - rk;
     return [r.left + (x + .5) * r.width / 8, r.top + (y + .5) * r.height / 8];
   }, sq);
@@ -432,6 +432,43 @@ console.log('Problemas');
   await p.evaluate(id => openPuzzle(id), z3.id);
   await p.click('#pzSol');
   check('ver la solución la reproduce entera y no cuenta como resuelto', await waitFor(p, id => S.pz.done && S.pz.moves.length === 5 && !S.solved[id], z3.id, 10000));
+  check('sin errores en la página', !errors.length, errors.join(' | '));
+  await ctx.close();
+}
+
+console.log('Repasa tus errores y jugar desde aquí');
+{
+  const { p, ctx, errors } = await fresh();
+  await p.evaluate(() => {
+    const mk = (id, moves, result, extra) => { const g = Object.assign({ id, created: Date.now() - 1e6, finished: Date.now() - 1e6, mode: 'ai', human: 0, level: 3, white: 'Carlos', black: levelLabel(3), moves, startFen: null, clock: null, result, reason: 'mate', undos: 0, hints: 0 }, extra || {}); return g; };
+    const a = mk('err1', ['f2f3', 'e7e5', 'g2g4', 'd8h4'], '0-1');
+    const ev = Motor.handle({ op: 'analyse', moves: a.moves, timeMs: 120 }); a.analysis = { evals: ev.map(e => [e.best || '', e.score]), at: Date.now() };
+    S.archive.push(a, mk('noan', ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1c4', 'f8c5', 'd2d3'], '1/2-1/2', { reason: 'acuerdo' }));
+    S.draft.mode = 'puzzles'; render();
+  });
+  check('el error grave sale para repasar', await p.evaluate(() => { const l = mistakeList(); return l.length === 1 && l[0].played === 'g2g4' && l[0].color === 0; }));
+  check('los errores de la máquina no salen', await p.evaluate(() => !mistakeList().some(x => x.color === 1)));
+  await p.click('#drStart');
+  check('se abre el ejercicio en la posición antes del error', await p.evaluate(() => !!S.drill && document.querySelector('.note').textContent.includes('g4')));
+  await move(p, 'g2g4');
+  check('repetir la jugada de la partida no vale', await waitFor(p, () => S.drill.fails === 1 && !S.drill.move, null, 5000));
+  const best = await p.evaluate(() => mistakeList()[0].best);
+  await move(p, best);
+  check('la buena se acepta y queda marcada', await waitFor(p, () => S.drill.done && Object.values(S.mist)[0] === 1, null, 20000));
+  await p.click('#drPlay'); await p.click('[data-cm="local"]'); await p.click('#ctGo');
+  check('jugar desde aquí empieza una partida nueva en esa posición', await p.evaluate(() => S.game && !S.drill && S.game.startFen && S.game.startFen.startsWith('rnbqkbnr/pppp1ppp/8/4p3/8/5P2') && S.game.moves.length === 0 && S.game.mode === 'local'));
+  await move(p, 'e1f2');
+  check('se juega con normalidad', await p.evaluate(() => S.game.moves[0] === 'e1f2'));
+  await p.click('#gResign'); await p.click('#rsW');
+  check('no cuenta para el Elo', await p.evaluate(() => !ratedGames().some(a => a.startFen)));
+  check('y se puede revisar y exportar en PGN con su FEN', await p.evaluate(() => toPgn(S.game).includes('[FEN "rnbqkbnr/pppp1ppp/8/4p3/8/5P2/PPPPP1PP/RNBQKBNR w KQkq')));
+  await p.evaluate(() => { S.game = null; S.draft.mode = 'puzzles'; render(); });
+  await p.click('#drAnalyse');
+  check('analizar las partidas pendientes', await waitFor(p, () => S.archive.find(a => a.id === 'noan').analysis, null, 60000));
+  await p.evaluate(() => openGameReview(S.archive.find(a => a.id === 'err1'), 'archive'));
+  await p.click('[data-nav="first"]'); await p.click('[data-nav="next"]');
+  await p.click('#rvPlay'); await p.click('[data-cc="1"]'); await p.click('[data-cl="1"]'); await p.click('#ctGo');
+  check('desde el análisis contra la máquina, con el color elegido', await p.evaluate(() => S.game.mode === 'ai' && S.game.human === 1 && S.game.level === 1 && S.game.startFen.includes(' b ')));
   check('sin errores en la página', !errors.length, errors.join(' | '));
   await ctx.close();
 }
