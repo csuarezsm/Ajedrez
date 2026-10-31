@@ -62,7 +62,7 @@ for (const [dev, w, h, dsf] of SIZES) {
   for (const name of SHOTS) {
     const ctx = await b.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dsf, isMobile: dev === 'movil', hasTouch: true });
     const p = await ctx.newPage();
-    await p.addInitScript(() => { if (!sessionStorage.s) { localStorage.setItem('ajedrez.v1', JSON.stringify({ onboarded: true, theme: 'noche' })); sessionStorage.s = 1; } });
+    await p.addInitScript(() => { window.AJEDREZ_ONLINE_URL = ''; }); await p.addInitScript(() => { if (!sessionStorage.s) { localStorage.setItem('ajedrez.v1', JSON.stringify({ onboarded: true, theme: 'noche' })); sessionStorage.s = 1; } });
     await p.goto(APP); await p.evaluate(seed); await p.evaluate(setup, name); await p.waitForTimeout(400);
     await p.screenshot({ path: `${OUT}${dev}-${name}.png` });
     await ctx.close();

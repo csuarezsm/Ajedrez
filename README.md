@@ -1,8 +1,8 @@
 # Ajedrez
 
 Ajedrez para Android: contra la máquina, dos jugadores en el mismo móvil y problemas de mate.
-App Capacitor + web (`www/`). No usa servidor: todos los datos se guardan en el móvil.
-Paquete: `com.itcanarias.ajedrez` · versión 1.0.3
+App Capacitor + web (`www/`). Todos los datos se guardan en el móvil; solo el juego en línea usa el servidor de juegos (nombre y jugadas, sin guardarlos).
+Paquete: `com.itcanarias.ajedrez` · versión 1.0.4
 
 © 2026 IT Canarias. Todos los derechos reservados.
 
@@ -16,7 +16,7 @@ Paquete: `com.itcanarias.ajedrez` · versión 1.0.3
 - **Problemas**: 170 problemas de mate (50 en 1, 70 en 2 y 50 en 3), ordenados de fácil a difícil. La máquina defiende lo mejor posible; se acepta cualquier jugada que mantenga el mate. Pistas y solución.
 - **Problema del día** (el mismo para todos ese día) y **Elo de problemas**: cada problema tiene una dificultad aproximada y solo cuenta el primer intento. «Siguiente a tu nivel» elige el más cercano a tu Elo.
 - **Editor de posiciones**: poner y quitar piezas, turno y enroques, copiar o pegar FEN, analizar la posición y jugar desde ella. Se abre desde el menú o desde el análisis («✏️ Editar»).
-- **Jugar en línea** (oculto hasta que el servidor esté instalado): salas con código, partida validada por el servidor, reloj en el servidor, reconexión, tablas, revancha. Cuenta para el Elo. Se activa poniendo la dirección del servidor en `ONLINE_URL` (`www/juego.js`).
+- **Jugar en línea** contra el servidor `wss://juegos.itcanarias.com/ws` (repo `csuarezsm/juegos-servidor`, instalado en el VPS): salas con código para compartir por WhatsApp, partida validada por el servidor, reloj en el servidor, reconexión, tablas y revancha. Cuenta para el Elo. La dirección está en `ONLINE_URL` (`www/juego.js`).
 - **Repasa tus errores**: con los errores (?) y errores graves (??) de las partidas analizadas se forman ejercicios: la posición antes del error y hay que encontrar algo mejor. Se acepta la jugada del motor o cualquier otra que no pierda más de 0,7 peones respecto a ella. Contra la máquina solo salen tus errores; en partidas de dos jugadores, los de los dos. Botón para analizar de golpe hasta 5 partidas sin analizar.
 - **Jugar desde aquí**: desde cualquier jugada del análisis, desde un problema o desde un error repasado se empieza una partida nueva desde esa posición, contra la máquina o a dos jugadores. Estas partidas no cuentan para el Elo.
 - **Clasificación**: Elo (inicial 1200, K = 40 las 10 primeras partidas y después 24). La máquina tiene un Elo fijo por nivel. Ficha de jugador, récords e historial con revisión jugada a jugada.

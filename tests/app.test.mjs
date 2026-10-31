@@ -238,13 +238,13 @@ const server = http.createServer(async (req, res) => {
 await new Promise(r => server.listen(0, r));
 const URL_APP = `http://localhost:${server.address().port}/`;
 const browser = await chromium.launch();
-async function fresh(state, viewport, online) {
+async function fresh(state, viewport, online = '') {
   const ctx = await browser.newContext({ viewport: viewport || { width: 412, height: 860 }, isMobile: true, hasTouch: true, serviceWorkers: 'block', acceptDownloads: true });
   await ctx.route('https://api.github.com/**', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ tag_name: 'v0.0.1', assets: [] }) }));
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', e => errors.push(e.message));
-  if (online) await p.addInitScript(u => { window.AJEDREZ_ONLINE_URL = u; }, online);
+  await p.addInitScript(u => { window.AJEDREZ_ONLINE_URL = u; }, online);   // en las pruebas, nunca el servidor real
   await p.addInitScript(st => { if (st && !sessionStorage.getItem('seeded')) { localStorage.setItem('ajedrez.v1', JSON.stringify(st)); sessionStorage.setItem('seeded', '1'); } }, state || { onboarded: true });
   await p.goto(URL_APP);
   return { p, ctx, errors };
@@ -484,6 +484,7 @@ console.log('Jugar en línea (con el servidor de juegos)');
   const B1 = await fresh({ onboarded: true, draft: { mode: 'online', ai: { name: 'Tere' } } }, null, WS);
   const a = A1.p, b = B1.p;
   check('sin servidor configurado no aparece la opción', !(await (await fresh()).p.$('[data-mode="online"]')));
+  check('la app apunta al servidor de IT Canarias', (await readFile(join(ROOT, 'juego.js'), 'utf8')).includes("'wss://juegos.itcanarias.com/ws'"));
   await a.click('[data-ocolor="w"]'); await a.click('[data-oclock="5+0"]'); await a.click('#oCreate');
   check('crear sala: aparece el código', await waitFor(a, () => S.game && S.game.mode === 'online' && /^[A-Z2-9]{4}$/.test(S.game.room) && !!document.querySelector('.olcode')));
   const code = await a.evaluate(() => S.game.room);

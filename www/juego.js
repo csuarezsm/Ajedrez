@@ -17,8 +17,8 @@ const isPlaceholder = n => PLACEHOLDER.test(String(n || '').trim());
 const PNAME = { 1: 'peón', 2: 'caballo', 3: 'alfil', 4: 'torre', 5: 'dama', 6: 'rey' };
 const RESULT_TXT = { '1-0': 'Ganan las blancas', '0-1': 'Ganan las negras', '1/2-1/2': 'Tablas' };
 const COLOR_TXT = ['blancas', 'negras'];
-// Servidor de juegos en línea (vacío = la opción «En línea» no aparece)
-const ONLINE_URL = window.AJEDREZ_ONLINE_URL || '';
+// Servidor de juegos en línea (repo csuarezsm/juegos-servidor). Vacío = la opción «En línea» no aparece.
+const ONLINE_URL = 'AJEDREZ_ONLINE_URL' in window ? window.AJEDREZ_ONLINE_URL : 'wss://juegos.itcanarias.com/ws';
 
 /* ================= Sonidos (sintetizados: sin archivos de audio) ================= */
 const Sound = (() => {

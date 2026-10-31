@@ -34,8 +34,9 @@ Ajedrez para jugar cuando quieras: contra la máquina, con otra persona en el mi
 • Deshacer jugadas, ofrecer tablas y rendirse.
 • Juega con blancas, con negras o al azar.
 
-👥 DOS JUGADORES
+👥 DOS JUGADORES Y EN LÍNEA
 • Partidas en el mismo móvil, con la opción de girar el tablero en cada turno.
+• Juega en línea con quien quieras: crea una sala y comparte el código por WhatsApp. Sin cuentas ni registro.
 • Reloj de ajedrez: 3+2, 5+0, 10+5, 15+10 o el ritmo que queráis.
 
 🔍 ANÁLISIS DE LA PARTIDA
@@ -83,15 +84,14 @@ Desarrollada en Lanzarote por IT Canarias.
 | Política de privacidad | La URL de arriba (hay que activar GitHub Pages) |
 | Acceso a la aplicación | Todas las funciones están disponibles sin restricciones |
 | Anuncios | No contiene anuncios |
-| Clasificación de contenido | Categoría «Juego». Violencia, sexo, lenguaje, drogas: No. Juegos de apuestas simulados: No. Interacción entre usuarios o compartir ubicación: No |
+| Clasificación de contenido | Categoría «Juego». Violencia, sexo, lenguaje, drogas: No. Juegos de apuestas simulados: No. Interacción entre usuarios: **Sí** (desde la 1.0.4 se juega en línea con otra persona; no hay chat, solo el nombre y las jugadas). Compartir ubicación: No |
 | Público objetivo | 18 años o más (evita los requisitos de la política de Familias) |
-| Seguridad de los datos | ¿Recoge o comparte datos? **No**. Los datos se cifran en tránsito: no aplica. Los usuarios pueden borrar los datos desde la app (⋮ → Borrar datos) |
+| Seguridad de los datos | Desde la 1.0.4 (juego en línea): **Sí recoge** → «Información personal: Nombre», marcado como *se procesa de forma efímera*, *no se comparte*, *opcional* (solo si se juega en línea), finalidad «Funciones de la aplicación». Se cifra en tránsito: **Sí**. Borrar datos: no se guardan en el servidor; los del móvil se borran desde ⋮ → Borrar datos. Nada más (ni ubicación, ni identificadores, ni analíticas) |
 | Aplicación gubernamental | No |
 | Funciones financieras | Ninguna |
 | Salud | Ninguna |
 | Permisos | Solo `INTERNET`. El permiso de instalar paquetes va solo en la versión de GitHub, no en el AAB de Play |
 
-Cuando se active el juego en línea (servidor común en el VPS), habrá que cambiar «Seguridad de los datos»: se envían el nombre que pone el jugador y sus jugadas para la partida, no se guardan después.
 
 ## Versión
 
