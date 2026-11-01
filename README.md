@@ -2,7 +2,7 @@
 
 Ajedrez para Android: contra la máquina, dos jugadores en el mismo móvil y problemas de mate.
 App Capacitor + web (`www/`). Todos los datos se guardan en el móvil; solo el juego en línea usa el servidor de juegos (nombre y jugadas, sin guardarlos).
-Paquete: `com.itcanarias.ajedrez` · versión 1.0.7
+Paquete: `com.itcanarias.ajedrez` · versión 1.0.8
 
 © 2026 IT Canarias. Todos los derechos reservados.
 
@@ -118,3 +118,7 @@ node tools/elegir-problemas.js cand.json        # elige los mejores y los añade
 - `docs/index.html`: página de descarga (GitHub Pages).
 - `docs/privacidad.html`: política de privacidad (la pide Google Play).
 - `docs/descargas.html`: contador de descargas del APK.
+
+## Más juegos de IT Canarias
+
+En el menú ⋮ → «🎲 Más juegos de IT Canarias» y en la página de descarga aparecen los otros juegos (Ajedrez, Damas, Chinchón, Pumba). El código es `www/masjuegos.js`, **el mismo archivo en todas las apps**, con la lista y los iconos (`www/juegos/`) dentro para que funcione sin conexión. Con internet, la app lee como mucho cada 12 horas el catálogo común `https://csuarezsm.github.io/juegos-servidor/juegos.json` (repo `juegos-servidor`, carpeta `docs/`): un juego nuevo añadido allí aparece en todas las apps sin actualizarlas. En Android, si el otro juego está instalado, el botón lo abre (plugin `OtrasApps` y `<queries>` del manifiesto); si no, lleva a su página de descarga, o a Google Play si el catálogo tiene su enlace `play` y esta es la versión de Play. En iPhone abre su versión web.
