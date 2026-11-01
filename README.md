@@ -2,7 +2,7 @@
 
 Ajedrez para Android: contra la máquina, dos jugadores en el mismo móvil y problemas de mate.
 App Capacitor + web (`www/`). Todos los datos se guardan en el móvil; solo el juego en línea usa el servidor de juegos (nombre y jugadas, sin guardarlos).
-Paquete: `com.itcanarias.ajedrez` · versión 1.0.9
+Paquete: `com.itcanarias.ajedrez` · versión 1.0.10
 
 © 2026 IT Canarias. Todos los derechos reservados.
 
@@ -126,3 +126,5 @@ En el menú ⋮ → «🎲 Más juegos de IT Canarias» y en la página de desca
 ## Aviso de turno en línea
 
 En una partida en línea, cuando pasa a ser tu turno suena un «ding-dong» corto y el móvil vibra (`www/turno.js`, el mismo archivo en todas las apps; sonido sintetizado). Se quita en ⋮ → Colores… → «🔔 Aviso de turno en línea». Suena con la app abierta; con la app en segundo plano el sistema puede pausarla.
+
+**Despistes de la máquina (niveles 1 a 4)**: de vez en cuando la máquina juega a propósito una jugada peor, pero con un límite según el nivel (`maxLoss` en `www/motor.js`): Principiante puede perder bastante, mientras que Avanzado nunca pierde más de algo más de un peón en ese despiste. Nunca juega una jugada al azar que regale una pieza grande sin motivo.

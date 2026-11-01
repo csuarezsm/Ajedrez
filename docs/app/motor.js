@@ -378,10 +378,10 @@ const LEVELS = [
   null,
   // Calibrados con partidas entre niveles vecinos (tools/calibrar-niveles.js): cada nivel saca entre
   // un 85 % y un 95 % de los puntos al anterior. El Elo es una estimación para la clasificación.
-  { name: 'Principiante', elo: 600,  depth: 1, noise: 150, blunder: 0.07, book: 4 },
-  { name: 'Aficionado',   elo: 800,  depth: 2, noise: 170, blunder: 0.06, book: 6 },
-  { name: 'Intermedio',   elo: 950,  depth: 2, noise: 95,  blunder: 0.03, book: 8 },
-  { name: 'Avanzado',     elo: 1150, depth: 3, noise: 70,  blunder: 0.02, book: 12 },
+  { name: 'Principiante', elo: 600,  depth: 1, noise: 150, blunder: 0.07, maxLoss: 500, book: 4 },
+  { name: 'Aficionado',   elo: 800,  depth: 2, noise: 170, blunder: 0.06, maxLoss: 330, book: 6 },
+  { name: 'Intermedio',   elo: 950,  depth: 2, noise: 95,  blunder: 0.03, maxLoss: 200, book: 8 },
+  { name: 'Avanzado',     elo: 1150, depth: 3, noise: 70,  blunder: 0.02, maxLoss: 120, book: 12 },
   { name: 'Experto',      elo: 1450, time: 350, depth: 6, noise: 15, book: 16 },
   { name: 'Club',         elo: 1650, time: 2500, book: 24 },
 ];
@@ -409,9 +409,11 @@ function levelMove(pos, level, moves, opts) {
   }
   // niveles con azar: puntúa todas y elige con ruido
   if (L.blunder && rnd() < L.blunder) {
-    const sc = rootScores(pos, 1, {});
-    const pick = sc[Math.floor(rnd() * sc.length)];
-    return { move: pos.uci(pick.m), score: pick.sc, depth: 1, blunder: true };
+    // despiste humano: una jugada peor de lo debido, pero sin perder más de lo que admite el nivel
+    const sc = rootScores(pos, 2, {});
+    const best = sc.reduce((a, x) => Math.max(a, x.sc), -INF);
+    const cand = sc.filter(x => best - x.sc > 0 && best - x.sc <= L.maxLoss);
+    if (cand.length) { const pick = cand[Math.floor(rnd() * cand.length)]; return { move: pos.uci(pick.m), score: pick.sc, depth: 2, blunder: true }; }
   }
   const sc = rootScores(pos, L.depth, { nodes: opts.nodes });
   let best = null, bv = -Infinity;
