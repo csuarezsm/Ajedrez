@@ -1440,7 +1440,7 @@ function onlineActs(g) {
 const jugadaOnline = a => Online.send({ t: 'jugada', a });
 function bindOnlineGame(g) {
   const on = (id, fn) => { const el = $('#' + id); if (el) el.onclick = fn; };
-  on('olShare', () => shareText(`♞ ¿Echamos una partida de ajedrez?\nAbre la app Ajedrez → 🌐 En línea → Unirse y escribe el código: *${g.room}*\n\n¿No tienes la app? Es gratis (Android e iPhone):\n${isPlay() ? PLAY_URL : DESCARGA_URL}`, 'Partida de ajedrez'));
+  on('olShare', () => shareText(`♞ ¿Echamos una partida de ajedrez?\nAbre la app Ajedrez → 🌐 En línea → Unirse y escribe el código: *${g.room}*\n\n¿No tienes la app? Es gratis, para Android e iPhone:\n${isPlay() ? '🤖 Android: ' + PLAY_URL + '\n🍏 iPhone: ' + WEB_URL : DESCARGA_URL}`, 'Partida de ajedrez'));
   on('olDraw', () => jugadaOnline({ tipo: 'tablas' }));
   on('olDrawYes', () => jugadaOnline({ tipo: 'tablas' }));
   on('olDrawNo', () => jugadaOnline({ tipo: 'rechazar' }));

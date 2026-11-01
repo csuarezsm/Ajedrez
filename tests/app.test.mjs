@@ -277,6 +277,7 @@ console.log('Versión web e iPhone');
   check('en la versión web no hay actualizador de APK', !(await p.$('#mUpd')) && !!(await p.$('#mIOS')));
   check('y lo vuelve a explicar desde el menú', await p.evaluate(() => { document.querySelector('#mIOS').click(); return !!document.querySelector('#iosOk'); }));
   check('etiquetas de iPhone: icono, título y pantalla completa', await p.evaluate(() => !!document.querySelector('link[rel="apple-touch-icon"]') && document.querySelector('meta[name="apple-mobile-web-app-title"]').content === 'Ajedrez'));
+  check('compartir la app: un mensaje para Android e iPhone', await p.evaluate(async () => { let txt = ''; navigator.share = async d => { txt = d.text; }; await shareApp(); return txt.includes('csuarezsm.github.io/Ajedrez/') && /Android/.test(txt) && /iPhone/.test(txt); }));
   await p.reload();
   check('el aviso de instalar sale solo una vez', !(await p.$('#iosOk')));
   check('sin errores en la página', !errors.length, errors.join(' | '));
