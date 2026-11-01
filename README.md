@@ -2,7 +2,7 @@
 
 Ajedrez para Android: contra la máquina, dos jugadores en el mismo móvil y problemas de mate.
 App Capacitor + web (`www/`). Todos los datos se guardan en el móvil; solo el juego en línea usa el servidor de juegos (nombre y jugadas, sin guardarlos).
-Paquete: `com.itcanarias.ajedrez` · versión 1.0.10
+Paquete: `com.itcanarias.ajedrez` · versión 1.0.11
 
 © 2026 IT Canarias. Todos los derechos reservados.
 
