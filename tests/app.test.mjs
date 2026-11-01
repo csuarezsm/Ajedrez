@@ -262,6 +262,27 @@ async function move(p, uci) { await tap(p, uci.slice(0, 2)); await tap(p, uci.sl
 async function drag(p, from, to) { const [x1, y1] = await sqXY(p, from), [x2, y2] = await sqXY(p, to); await p.mouse.move(x1, y1); await p.mouse.down(); await p.mouse.move((x1 + x2) / 2, (y1 + y2) / 2, { steps: 4 }); await p.mouse.move(x2, y2, { steps: 4 }); await p.mouse.up(); await p.waitForTimeout(60); }
 const waitFor = (p, fn, arg, timeout = 15000) => p.waitForFunction(fn, arg, { timeout }).then(() => true, () => false);
 
+console.log('Versión web e iPhone');
+{
+  const { execSync } = await import('node:child_process');
+  let iguales = true; try { execSync('diff -r www docs/app', { cwd: fileURLToPath(new URL('..', import.meta.url)) }); } catch (e) { iguales = false; }
+  check('docs/app (versión web) es igual que www/ — si no: npm run web', iguales);
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, serviceWorkers: 'block',
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' });
+  const p = await ctx.newPage(); const errors = []; p.on('pageerror', e => errors.push(e.message));
+  await p.addInitScript(() => { window.AJEDREZ_ONLINE_URL = ''; if (!sessionStorage.s) { localStorage.setItem('ajedrez.v1', JSON.stringify({ onboarded: true })); sessionStorage.s = 1; } });
+  await p.goto(URL_APP);
+  check('en Safari de iPhone explica cómo añadirla a la pantalla de inicio', await waitFor(p, () => !!document.querySelector('#iosOk')));
+  await p.click('#iosOk'); await p.click('#menuBtn');
+  check('en la versión web no hay actualizador de APK', !(await p.$('#mUpd')) && !!(await p.$('#mIOS')));
+  check('y lo vuelve a explicar desde el menú', await p.evaluate(() => { document.querySelector('#mIOS').click(); return !!document.querySelector('#iosOk'); }));
+  check('etiquetas de iPhone: icono, título y pantalla completa', await p.evaluate(() => !!document.querySelector('link[rel="apple-touch-icon"]') && document.querySelector('meta[name="apple-mobile-web-app-title"]').content === 'Ajedrez'));
+  await p.reload();
+  check('el aviso de instalar sale solo una vez', !(await p.$('#iosOk')));
+  check('sin errores en la página', !errors.length, errors.join(' | '));
+  await ctx.close();
+}
+
 console.log('Partida contra la máquina');
 {
   const { p, ctx, errors } = await fresh();

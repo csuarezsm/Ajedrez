@@ -1,6 +1,6 @@
 {
   "name": "ajedrez",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "private": true,
   "author": "IT Canarias",
   "license": "UNLICENSED",
@@ -9,6 +9,7 @@
     "sync": "npx cap sync android",
     "open": "npx cap open android",
     "test": "node tests/app.test.mjs",
+    "web": "bash tools/publicar-web.sh",
     "icons": "npx @capacitor/assets generate --android --iconBackgroundColor '#1b2a3a' --splashBackgroundColor '#121c27'"
   },
   "dependencies": {

@@ -8,6 +8,10 @@
 <meta name="theme-color" content="#1b2a3a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ajedrez">
+<meta name="format-detection" content="telephone=no">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <title>Ajedrez</title>
@@ -361,7 +365,7 @@ function openThemes() {
   $('#thOk').onclick = closeModal;
 }
 
-const APP_VERSION = '1.0.5';
+const APP_VERSION = '1.0.6';
 const REPO = 'csuarezsm/Ajedrez';
 const MAX_ARCHIVE = 500;
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -525,7 +529,7 @@ async function checkUpdates(manual) {
     if (manual) showUpdMsg('No se pudo comprobar. Revisa que tengas conexión a internet.', '⚠️');
   }
 }
-function hasUpd() { return !isPlay() && !!(S.updAvail && cmpVer(S.updAvail.v, APP_VERSION) > 0); }
+function hasUpd() { return !isPlay() && isNative() && !!(S.updAvail && cmpVer(S.updAvail.v, APP_VERSION) > 0); }
 function openUpdAvail() { if (hasUpd()) showUpdate(S.updAvail.v, S.updAvail.url, S.updAvail.page, S.updAvail.note); }
 function refreshUpdBadge() {
   const on = hasUpd();
@@ -676,7 +680,7 @@ function openWelcome(i) {
       <div style="display:flex;justify-content:center;gap:6px;margin:14px 0 4px">${WELCOME.map((_, k) => `<i style="width:${k === i ? 20 : 8}px;height:8px;border-radius:4px;background:${k === i ? 'var(--gold)' : 'var(--line)'};display:block"></i>`).join('')}</div>
     </div>
     <div class="acts">${i ? '<button class="btn-ghost" id="wbPrev">‹ Atrás</button>' : '<button class="btn-ghost" id="wbSkip">Saltar</button>'}<button class="btn-gold" id="wbNext">${last ? '¡A jugar!' : 'Siguiente ›'}</button></div>`);
-  const done = () => { S.onboarded = true; save(); closeModal(); };
+  const done = () => { S.onboarded = true; save(); closeModal(); openIOSInstall(false); };
   const sk = $('#wbSkip'); if (sk) sk.onclick = done;
   const pv = $('#wbPrev'); if (pv) pv.onclick = () => openWelcome(i - 1);
   $('#wbNext').onclick = () => last ? done() : openWelcome(i + 1);
@@ -707,8 +711,25 @@ function openGameRules() {
 
 /* ---------- Compartir la app ---------- */
 const APK_URL = 'https://github.com/' + REPO + '/releases/latest/download/ajedrez.apk';
+const WEB_URL = 'https://csuarezsm.github.io/Ajedrez/app/';          // versión web instalable (iPhone y cualquier navegador)
+const DESCARGA_URL = 'https://csuarezsm.github.io/Ajedrez/';         // página con Android e iPhone
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isStandalone = () => window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+// iPhone/iPad en Safari sin instalar: explicar cómo añadirla a la pantalla de inicio (si no, iOS puede borrar los datos)
+function openIOSInstall(force) {
+  if (!force && (!isIOS() || isStandalone() || isNative() || S.iosHint)) return false;
+  S.iosHint = true; save();
+  openModal(`<h3>📲 Instala Ajedrez en tu iPhone</h3><div class="sub">Así tendrás su icono como cualquier app, funcionará sin conexión y tus partidas quedarán guardadas.</div>
+    <ol class="rules" style="padding-left:22px;line-height:1.6"><li>Pulsa el botón <b>Compartir</b> de Safari (el cuadrado con la flecha hacia arriba).</li><li>Baja y elige <b>«Añadir a pantalla de inicio»</b>.</li><li>Pulsa <b>Añadir</b> y abre Ajedrez desde su icono.</li></ol>
+    <div class="mut">Si solo la usas desde Safari y pasan semanas sin abrirla, iOS puede borrar sus datos. Para no perder nada: ⋮ → Clasificación y partidas → Partidas → Guardar copia de seguridad.</div>
+    <div class="acts"><button class="btn-gold" id="iosOk">Entendido</button></div>`);
+  $('#iosOk').onclick = closeModal;
+  return true;
+}
 async function shareApp() {
-  const text = isPlay()
+  const text = !isNative()
+    ? '♞ Ajedrez — juega contra la máquina, con un amigo o en línea, y resuelve problemas de mate. Gratis y sin anuncios.\n\niPhone (y cualquier móvil): ábrela en Safari y pulsa Compartir → «Añadir a pantalla de inicio»:\n' + WEB_URL + '\n\nAndroid: ' + DESCARGA_URL
+    : isPlay()
     ? '♞ Ajedrez — juega contra la máquina, con un amigo o resuelve problemas de mate. Gratis y sin anuncios.\n\nDescárgala en Google Play:\n' + PLAY_URL
     : '♞ Ajedrez — juega contra la máquina (6 niveles), con un amigo en el mismo móvil o resuelve problemas de mate. Reloj, análisis de partidas y Elo. Gratis y sin anuncios.\n\nDescárgala para Android aquí:\n' + APK_URL + '\n\n(Al abrir el archivo, Android puede pedir permiso para instalar apps de fuera de Google Play.)';
   try {
@@ -1038,9 +1059,10 @@ $('#menuBtn').onclick = () => {
     <button id="mArch">📊 Clasificación y partidas</button>
     ${S.pz || S.drill || (S.draft.mode === 'puzzles' && !g) ? '' : '<button id="mPz">🧩 Problemas y repaso de errores</button>'}
     ${live || EDITOR ? '' : '<button id="mEditor">✏️ Editor de posiciones</button>'}
+    ${isIOS() && !isStandalone() && !isNative() ? '<button id="mIOS" class="btn-gold">📲 Instalar en el iPhone</button>' : ''}
     <button id="mShareApp">📲 Compartir la app</button>
     <button id="mRoster">👥 Jugadores habituales</button>
-    ${isPlay() ? '' : hasUpd() ? `<button id="mUpd" class="btn-gold">🎉 Actualizar a v${esc(S.updAvail.v)} (nueva)</button>` : '<button id="mUpd">🔄 Buscar actualizaciones</button>'}
+    ${isPlay() || !isNative() ? '' : hasUpd() ? `<button id="mUpd" class="btn-gold">🎉 Actualizar a v${esc(S.updAvail.v)} (nueva)</button>` : '<button id="mUpd">🔄 Buscar actualizaciones</button>'}
     <button id="mTheme">🎨 Colores, tablero y sonido</button>
     <button id="mHelp">❓ Cómo se usa</button>
     <button id="mGameRules">📖 Reglas del ajedrez</button>
@@ -1056,6 +1078,7 @@ $('#menuBtn').onclick = () => {
   on('mUpd', () => hasUpd() ? openUpdAvail() : checkUpdates(true));
   on('mRoster', openRoster);
   on('mShareApp', () => { closeModal(); shareApp(); });
+  on('mIOS', () => openIOSInstall(true));
   on('mArch', () => openArchive('ranking'));
   on('mPgn', () => sharePgn(g));
   on('mEditor', () => { REVIEW = null; openEditor(CH.START_FEN, 'home'); });
@@ -1069,7 +1092,7 @@ $('#menuBtn').onclick = () => {
         <div class="mut" style="margin-top:8px;line-height:1.5">
         • Tus partidas, jugadores y ajustes se guardan <b>solo en este móvil</b>. No hay cuentas ni registro.<br>
         • La app <b>no recoge ningún dato personal</b> ni de uso, y no lleva anuncios ni rastreadores.<br>
-        ${isPlay() ? '• La app <b>no necesita internet</b> para funcionar ni envía ningún dato. Las actualizaciones llegan por Google Play.<br>' : '• Solo se conecta a internet para <b>buscar actualizaciones</b> en GitHub (no envía ningún dato tuyo; como cualquier web, GitHub ve la dirección IP de la conexión) y, si tú lo pulsas, para abrir PayPal o compartir.<br>'}
+        ${!isNative() ? '• Esta es la <b>versión web</b>: se carga desde GitHub Pages (csuarezsm.github.io) y se actualiza sola al abrirla, sin enviar ningún dato tuyo. Instalada en la pantalla de inicio funciona sin conexión.<br>' : isPlay() ? '• La app <b>no necesita internet</b> para funcionar ni envía ningún dato. Las actualizaciones llegan por Google Play.<br>' : '• Solo se conecta a internet para <b>buscar actualizaciones</b> en GitHub (no envía ningún dato tuyo; como cualquier web, GitHub ve la dirección IP de la conexión) y, si tú lo pulsas, para abrir PayPal o compartir.<br>'}
         ${ONLINE_URL ? '• Solo si juegas <b>en línea</b>, se envían al servidor de juegos de IT Canarias el nombre que pones y tus jugadas, para la partida. No se guardan.<br>' : ''}
         • La copia de seguridad automática se queda en el móvil; Android puede incluirla en tu copia de Google si la tienes activada.<br>
         • Responsable: IT Canarias · itcanarias.com</div></details>
@@ -1126,7 +1149,10 @@ setTimeout(async () => {
     if (S.archive.length || S.game) { S.onboarded = true; save(); }
     else if ($('#modal').classList.contains('hidden')) openWelcome(0);
   }
+  if ($('#modal').classList.contains('hidden')) openIOSInstall(false);
 }, 400);
+// En la versión web, pedir al navegador que no borre los datos de la app
+try { if (!isNative() && navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') autoBackup(false); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') autoCheckUpdates(); });
 if (S.game && S.game.clock && S.game.tick) { S.game.paused = true; S.game.tick = null; }   // el tiempo con la app cerrada no cuenta

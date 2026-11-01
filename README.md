@@ -2,7 +2,7 @@
 
 Ajedrez para Android: contra la máquina, dos jugadores en el mismo móvil y problemas de mate.
 App Capacitor + web (`www/`). Todos los datos se guardan en el móvil; solo el juego en línea usa el servidor de juegos (nombre y jugadas, sin guardarlos).
-Paquete: `com.itcanarias.ajedrez` · versión 1.0.5
+Paquete: `com.itcanarias.ajedrez` · versión 1.0.6
 
 © 2026 IT Canarias. Todos los derechos reservados.
 
@@ -60,9 +60,18 @@ Calibrados en la 1.0.3 con `tools/calibrar-niveles.js` (partidas entre niveles v
 - El reloj guarda `times` y `tick`, igual que lo hará el servidor.
 - El servidor común está en el repo `csuarezsm/juegos-servidor`. `tests/servidor/` es una copia de su `src/` para probar la app contra él en `npm test`.
 
+## Versión web (iPhone)
+
+La misma app se publica como web instalable en **https://csuarezsm.github.io/Ajedrez/app/** (GitHub Pages, carpeta `docs/app`, sin cargar el VPS). En iPhone: Safari → Compartir → «Añadir a pantalla de inicio». La app lo explica sola la primera vez que se abre en Safari.
+
+- Funciona todo: contra la máquina, dos jugadores, en línea, problemas, análisis, clasificación, PGN y copias (exportar a mano).
+- Se actualiza sola al abrirla (sin aviso). No hay actualizador de APK ni copia automática en el móvil.
+- `docs/app` tiene que ser igual que `www/`: **antes de cada commit que cambie `www/`, `npm run web`**. Las pruebas y el workflow fallan si no.
+
 ## Publicar una versión
 
 1. Sube `versionCode` y `versionName` en `android/app/build.gradle`.
+   Después de los cambios en `www/`, ejecuta `npm run web` (versión web).
 2. Pon el mismo número en `APP_VERSION` (`www/index.html`) y en `CACHE` (`www/sw.js`).
 3. Haz push a `main`. El workflow `.github/workflows/android.yml`:
    - pasa las **pruebas automáticas** (`npm test`); si alguna falla, no se publica nada;

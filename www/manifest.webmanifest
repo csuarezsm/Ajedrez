@@ -2,7 +2,7 @@
   "name": "Ajedrez",
   "short_name": "Ajedrez",
   "description": "Juega al ajedrez contra la máquina (6 niveles), con otra persona en el mismo móvil o resuelve problemas de mate. Reloj, análisis, Elo y PGN.",
-  "id": "/",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
